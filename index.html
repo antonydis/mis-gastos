@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="Registra tus gastos sin convertirlo en una tarea.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <title>Mis gastos</title>
+</head>
+<body>
+  <main class="wrap">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Mis gastos</p>
+        <h1>¿Qué gastaste?</h1>
+      </div>
+      <button id="googleButton" class="button secondary compact" type="button" hidden>Conectar Google</button>
+    </header>
+
+    <section id="modeBanner" class="banner" aria-live="polite"></section>
+
+    <section class="composer" aria-labelledby="register-title">
+      <label id="register-title" for="expenseText">Escríbelo como te salga.</label>
+      <textarea id="expenseText" rows="4" placeholder="Ej. 850 en gasolina y 300 en café"></textarea>
+      <div class="hint-row">
+        <span>También puedes poner “ayer” o indicar la moneda.</span>
+      </div>
+      <button id="registerButton" class="button primary" type="button">Registrar</button>
+      <div class="quick-examples" aria-label="Ejemplos">
+        <button type="button" data-example="850 en gasolina">850 en gasolina</button>
+        <button type="button" data-example="Ayer gasté 2300 en supermercado y 450 en almuerzo">Ayer: supermercado y almuerzo</button>
+      </div>
+    </section>
+
+    <section id="proposal" class="proposal" hidden aria-live="polite">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Antes de guardar</p>
+          <h2>¿Está bien así?</h2>
+        </div>
+      </div>
+      <div id="proposalRows" class="proposal-rows"></div>
+      <div class="proposal-actions">
+        <button id="cancelProposal" class="button secondary" type="button">Cambiar</button>
+        <button id="confirmProposal" class="button primary" type="button">Guardar</button>
+      </div>
+    </section>
+
+    <section class="summary" aria-labelledby="summary-title">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Este mes</p>
+          <h2 id="summary-title">Así van tus gastos</h2>
+        </div>
+        <a id="sheetLink" class="text-link" href="#" target="_blank" rel="noopener" hidden>Abrir hoja</a>
+      </div>
+      <div class="stats">
+        <article class="stat">
+          <span>Total</span>
+          <strong id="monthTotal">0</strong>
+        </article>
+        <article class="stat">
+          <span>Donde más gastas</span>
+          <strong id="topCategory">—</strong>
+        </article>
+      </div>
+      <div id="categoryList" class="category-list"></div>
+    </section>
+
+    <section class="questions" aria-labelledby="questions-title">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Entender</p>
+          <h2 id="questions-title">Preguntas rápidas</h2>
+        </div>
+      </div>
+      <div class="question-grid">
+        <button type="button" data-question="month">¿Cuánto gasté este mes?</button>
+        <button type="button" data-question="top">¿En qué gasto más?</button>
+        <button type="button" data-question="compare">¿Gasto más que el mes pasado?</button>
+        <button type="button" data-question="largest">¿Cuáles fueron mis gastos más grandes?</button>
+        <button type="button" data-question="review">¿Hay algo que debería mirar?</button>
+      </div>
+      <div id="answer" class="answer" hidden></div>
+    </section>
+
+    <section class="recent" aria-labelledby="recent-title">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Últimos movimientos</p>
+          <h2 id="recent-title">Lo más reciente</h2>
+        </div>
+      </div>
+      <div id="recentList" class="recent-list"></div>
+    </section>
+
+    <details class="settings">
+      <summary>Configuración</summary>
+      <div class="settings-body">
+        <label for="currencySelect">Moneda principal</label>
+        <select id="currencySelect">
+          <option value="NIO">Córdoba (NIO)</option>
+          <option value="USD">Dólar (USD)</option>
+          <option value="CAD">Dólar canadiense (CAD)</option>
+          <option value="EUR">Euro (EUR)</option>
+        </select>
+        <p id="localModelStatus" class="muted">La comprensión avanzada se prepara solo si hace falta.</p>
+        <button id="clearLocalButton" class="button danger" type="button">Borrar prueba local</button>
+      </div>
+    </details>
+
+    <p id="status" class="status" aria-live="polite"></p>
+  </main>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="./config.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
