@@ -1,0 +1,13 @@
+{
+  "name": "Mis gastos",
+  "short_name": "Mis gastos",
+  "description": "Registra tus gastos sin convertirlo en una tarea.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "lang": "es",
+  "icons": [
+    {"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}
