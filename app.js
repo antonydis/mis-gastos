@@ -2,29 +2,31 @@ const CONFIG = window.MIS_GASTOS_CONFIG || {};
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const STORAGE_KEY = "mis-gastos-local-v1";
 const SETTINGS_KEY = "mis-gastos-settings-v1";
+const CATEGORY_MEMORY_KEY = "mis-gastos-category-memory-v1";
 const MODEL_VERSION = "0.2.82";
 
 const CATEGORIES = [
   "Supermercado","Restaurantes","Transporte","Gasolina","Casa","Salud",
-  "Servicios","Suscripciones","Compras","Entretenimiento","Educación",
+  "Servicios","Suscripciones","Compras","Cuidado personal","Entretenimiento","Educación",
   "Viajes","Familia","Construcción","Otros"
 ];
 
 const CATEGORY_KEYWORDS = {
-  Supermercado:["supermercado","super","mercado","pricesmart","price smart","walmart","despensa","comestibles"],
-  Restaurantes:["restaurante","comida","almuerzo","cena","desayuno","café","cafe","cafetería","cafeteria","bar"],
-  Transporte:["taxi","uber","indriver","bus","autobús","autobus","transporte","parqueo","parking","peaje"],
-  Gasolina:["gasolina","combustible","gasolinera","diesel","diésel"],
-  Casa:["casa","hogar","mueble","limpieza","reparación","reparacion"],
-  Salud:["salud","medicina","farmacia","doctor","médico","medico","dentista"],
-  Servicios:["luz","agua","internet","teléfono","telefono","electricidad","servicio"],
-  Suscripciones:["netflix","spotify","youtube","suscripción","suscripcion","icloud","google one"],
-  Compras:["ropa","zapatos","compra","tienda","amazon"],
-  Entretenimiento:["cine","película","pelicula","concierto","juego","entretenimiento"],
-  Educación:["curso","libro","escuela","universidad","educación","educacion"],
-  Viajes:["hotel","vuelo","avión","avion","viaje","airbnb"],
-  Familia:["familia","papá","papa","mamá","mama","hijo","hija"],
-  Construcción:["ferretería","ferreteria","construcción","construccion","material","sinsa"]
+  Supermercado:["supermercado","super","mercado","pricesmart","price smart","walmart","despensa","comestibles","abarrotes","pulperia","pulpería"],
+  Restaurantes:["restaurante","restaurant","restaurantes","comida","almuerzo","cena","desayuno","cafe","cafeteria","coffee","bar","delivery","ubereats","uber eats","rappi"],
+  Transporte:["taxi","uber","indriver","bus","autobus","transporte","parqueo","parking","peaje","metro"],
+  Gasolina:["gasolina","combustible","gasolinera","diesel","puma","shell","esso"],
+  Casa:["casa","hogar","mueble","limpieza","reparacion","alquiler","arriendo","renta"],
+  Salud:["salud","medicina","farmacia","doctor","medico","dentista","clinica","hospital"],
+  Servicios:["luz","agua","internet","telefono","electricidad","servicio","seguro"],
+  Suscripciones:["netflix","spotify","youtube","suscripcion","icloud","google one"],
+  Compras:["ropa","zapatos","compra","tienda","amazon","regalo"],
+  "Cuidado personal":["manicure","pedicure","salon","salon de belleza","barberia","peluqueria","spa","estetica"],
+  Entretenimiento:["cine","pelicula","concierto","juego","entretenimiento","museo"],
+  Educación:["curso","libro","escuela","universidad","educacion","colegio"],
+  Viajes:["hotel","vuelo","avion","viaje","airbnb","hostal"],
+  Familia:["familia","papa","mama","hijo","hija"],
+  Construcción:["ferreteria","construccion","material","sinsa"]
 };
 
 const el = (id) => document.getElementById(id);
@@ -108,12 +110,57 @@ function saveLocalRows(rows) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
 }
 
+function normalizeText(text) {
+  return String(text || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function categoryMemory() {
+  try { return JSON.parse(localStorage.getItem(CATEGORY_MEMORY_KEY) || "{}"); }
+  catch { return {}; }
+}
+
+function rememberCategory(text, category) {
+  const key = normalizeText(text);
+  if (!key || key === "gasto" || !CATEGORIES.includes(category)) return;
+  const memory = categoryMemory();
+  memory[key] = category;
+  const entries = Object.entries(memory).slice(-150);
+  localStorage.setItem(CATEGORY_MEMORY_KEY, JSON.stringify(Object.fromEntries(entries)));
+}
+
 function categoryFor(text) {
-  const lower = text.toLowerCase();
+  const normalized = normalizeText(text);
+  const memory = categoryMemory();
+
+  if (memory[normalized]) return memory[normalized];
+
+  const learned = Object.entries(memory)
+    .sort((a,b) => b[0].length - a[0].length)
+    .find(([key]) => key.length >= 4 && normalized.includes(key));
+  if (learned) return learned[1];
+
+  let bestCategory = "Otros";
+  let bestScore = 0;
   for (const [category, words] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (words.some((word) => lower.includes(word))) return category;
+    let score = 0;
+    for (const word of words) {
+      const needle = normalizeText(word);
+      if (!needle) continue;
+      if (normalized === needle) score += 5;
+      else if (normalized.includes(needle)) score += Math.max(1, needle.split(" ").length + 1);
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestCategory = category;
+    }
   }
-  return "Otros";
+  return bestCategory;
 }
 
 function paymentFor(text) {
@@ -283,7 +330,11 @@ Mensaje: ${JSON.stringify(text)}`;
     date:/^\d{4}-\d{2}-\d{2}$/.test(item.date || "") ? item.date : dateFromText(text),
     description:String(item.description || "Gasto").trim().slice(0,120),
     merchant:String(item.merchant || "").trim().slice(0,100),
-    category:CATEGORIES.includes(item.category) ? item.category : categoryFor(String(item.description || "")),
+    category:(() => {
+      const learned = categoryFor(String(item.merchant || "") + " " + String(item.description || ""));
+      if (learned !== "Otros") return learned;
+      return CATEGORIES.includes(item.category) ? item.category : "Otros";
+    })(),
     amount:Number(item.amount),
     currency:["NIO","USD","CAD","EUR"].includes(String(item.currency).toUpperCase()) ? String(item.currency).toUpperCase() : settings.currency,
     paymentMethod:String(item.paymentMethod || "").trim().slice(0,50),
@@ -309,7 +360,9 @@ function renderProposal(expenses) {
 
   root.querySelectorAll("[data-category-index]").forEach((select) => {
     select.addEventListener("change", () => {
-      state.proposal[Number(select.dataset.categoryIndex)].category = select.value;
+      const item = state.proposal[Number(select.dataset.categoryIndex)];
+      item.category = select.value;
+      rememberCategory(item.merchant || item.description, select.value);
     });
   });
   el("proposal").hidden = false;
