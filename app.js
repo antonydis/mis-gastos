@@ -378,6 +378,8 @@ Reglas:
 - Si falta un dato indispensable para registrar correctamente, no adivines: deja expenses con lo que sea seguro y escribe UNA pregunta corta en "question".
 - Un monto es indispensable. Comercio y método de pago no lo son.
 - Si hay varios gastos, devuelve un elemento por gasto.
+${source === "Foto" ? "- La entrada viene de OCR de un recibo: identifica comercio, fecha y TOTAL FINAL. Ignora subtotales, impuestos, cambio y números que no sean el total pagado, salvo que el texto describa claramente varios gastos." : ""}
+${source === "Audio" ? "- La entrada viene de una transcripción de voz: corrige errores obvios de transcripción usando el contexto del gasto, sin inventar datos." : ""}
 
 Entrada (${source}): ${JSON.stringify(text)}`;
 
@@ -514,6 +516,150 @@ async function proposeFromText() {
     setStatus(err.message || "No pude entender ese gasto.");
   } finally {
     setBusy(false);
+  }
+}
+
+async function getOcrWorker() {
+  if (state.ocrWorker) return state.ocrWorker;
+  if (state.ocrWorkerLoading) return state.ocrWorkerLoading;
+  state.ocrWorkerLoading = (async () => {
+    setStatus("Preparando lectura de recibos…");
+    const {createWorker} = await import("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.esm.min.js");
+    state.ocrWorker = await createWorker("spa+eng");
+    return state.ocrWorker;
+  })();
+  try { return await state.ocrWorkerLoading; }
+  finally { state.ocrWorkerLoading = null; }
+}
+
+async function handlePhoto(file) {
+  if (!file) return;
+  el("photoButton").disabled = true;
+  setStatus("Leyendo el recibo en este dispositivo…");
+  try {
+    const worker = await getOcrWorker();
+    const result = await worker.recognize(file);
+    const text = String(result?.data?.text || "").trim();
+    if (!text) throw new Error("No pude leer texto de esa foto. Prueba con más luz y el recibo completo.");
+    await processNaturalInput(text, "Foto", true);
+    setStatus("");
+  } catch (err) {
+    setStatus(err.message || "No pude leer esa foto.");
+  } finally {
+    el("photoButton").disabled = false;
+    el("photoInput").value = "";
+  }
+}
+
+function resampleTo16k(data, sourceRate) {
+  if (sourceRate === 16000) return data;
+  const ratio = sourceRate / 16000;
+  const length = Math.max(1, Math.round(data.length / ratio));
+  const out = new Float32Array(length);
+  for (let i = 0; i < length; i++) {
+    const pos = i * ratio;
+    const left = Math.floor(pos);
+    const right = Math.min(left + 1, data.length - 1);
+    const mix = pos - left;
+    out[i] = data[left] * (1 - mix) + data[right] * mix;
+  }
+  return out;
+}
+
+async function decodeAudioTo16k(blob) {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) throw new Error("Este navegador no puede preparar el audio.");
+  const ctx = new AudioCtx();
+  try {
+    const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const mono = new Float32Array(buffer.length);
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+      const values = buffer.getChannelData(channel);
+      for (let i = 0; i < values.length; i++) mono[i] += values[i] / buffer.numberOfChannels;
+    }
+    return resampleTo16k(mono, buffer.sampleRate);
+  } finally {
+    await ctx.close().catch(() => {});
+  }
+}
+
+async function getTranscriber() {
+  if (state.transcriber) return state.transcriber;
+  if (state.transcriberLoading) return state.transcriberLoading;
+  state.transcriberLoading = (async () => {
+    setStatus("Preparando voz en este dispositivo…");
+    const {pipeline} = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/+esm");
+    state.transcriber = await pipeline("automatic-speech-recognition", "onnx-community/whisper-tiny");
+    return state.transcriber;
+  })();
+  try { return await state.transcriberLoading; }
+  finally { state.transcriberLoading = null; }
+}
+
+async function transcribeAndProcess(blob) {
+  el("audioButton").disabled = true;
+  setStatus("Transcribiendo en este dispositivo…");
+  try {
+    const transcriber = await getTranscriber();
+    const audio = await decodeAudioTo16k(blob);
+    const result = await transcriber(audio, {language:"spanish", task:"transcribe"});
+    const text = String(result?.text || "").trim();
+    if (!text) throw new Error("No pude entender el audio. Intenta hablar un poco más cerca del teléfono.");
+    el("expenseText").value = text;
+    setStatus("Entendí: “" + text.slice(0,120) + (text.length > 120 ? "…" : "") + "”");
+    await processNaturalInput(text, "Audio", true);
+  } catch (err) {
+    setStatus(err.message || "No pude procesar el audio.");
+  } finally {
+    el("audioButton").disabled = false;
+  }
+}
+
+async function toggleAudioRecording() {
+  if (state.mediaRecorder && state.mediaRecorder.state === "recording") {
+    state.mediaRecorder.stop();
+    el("audioButton").textContent = "Hablar";
+    el("audioButton").classList.remove("recording");
+    return;
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    setStatus("Este navegador no permite grabar audio desde aquí.");
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    state.audioChunks = [];
+    state.mediaRecorder = new MediaRecorder(stream);
+    state.mediaRecorder.addEventListener("dataavailable", (event) => {
+      if (event.data?.size) state.audioChunks.push(event.data);
+    });
+    state.mediaRecorder.addEventListener("stop", async () => {
+      stream.getTracks().forEach((track) => track.stop());
+      const mimeType = state.mediaRecorder?.mimeType || "audio/webm";
+      const blob = new Blob(state.audioChunks, {type:mimeType});
+      state.audioChunks = [];
+      await transcribeAndProcess(blob);
+    }, {once:true});
+    state.mediaRecorder.start();
+    el("audioButton").textContent = "Terminar audio";
+    el("audioButton").classList.add("recording");
+    setStatus("Te escucho. Cuenta los gastos con naturalidad.");
+  } catch (err) {
+    setStatus("No pude acceder al micrófono. Revisa el permiso del navegador.");
+  }
+}
+
+async function prepareLocalUnderstanding() {
+  el("prepareModelButton").disabled = true;
+  try {
+    await loadLocalModel();
+    setStatus("Comprensión local lista.");
+  } catch (err) {
+    setStatus(err.message || "No pude preparar el modelo local.");
+  } finally {
+    el("prepareModelButton").disabled = false;
   }
 }
 
