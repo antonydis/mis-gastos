@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check JavaScript
-        run: node --check app.js && node --check config.js && node --check sw.js && node --check worker/src/index.js && node --check worker/src/utils.js && node --check worker/src/google.js && node --check worker/src/telegram.js
+        run: node --check app.js && node --check config.js && node --check sw.js && node --check worker/src/index.js && node --check worker/src/utils.js && node --check worker/src/google.js && node --check worker/src/telegram.js && node --check worker/src/model.js
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
