@@ -439,7 +439,15 @@ async function answerClarification() {
     el("clarification").hidden = true;
     renderProposal(result.expenses);
   } catch (err) {
-    setStatus(err.message || "No pude completar ese gasto.");
+    const fallback = quickParse(combined);
+    fallback.expenses.forEach((x) => { x.source = state.clarificationSource; });
+    if (fallback.expenses.length) {
+      el("clarification").hidden = true;
+      renderProposal(fallback.expenses);
+      setStatus("Lo completé con el modo local básico.");
+    } else {
+      setStatus(err.message || "No pude completar ese gasto.");
+    }
   } finally {
     el("clarificationButton").disabled = false;
   }
