@@ -1,73 +1,62 @@
 # Mis gastos
 
-Un registro de gastos simple que guarda los datos en el Google Drive de cada persona.
+Un registro de gastos simple que guarda los movimientos en el Google Drive de cada persona.
 
-## La idea
+## Experiencia
 
-Registrar gastos no debería sentirse como llevar contabilidad. La persona escribe algo como:
+La persona puede registrar:
 
-> 850 en gasolina y 300 en café
+- texto: `850 en gasolina y 300 en café`;
+- foto de un recibo;
+- audio contando lo que gastó;
+- Telegram, después de vincular Google una sola vez.
 
-La aplicación propone los movimientos, la persona confirma y listo.
+La aplicación propone la interpretación antes de guardar.
 
-## MVP
+## Web
 
-- Interfaz en español.
-- Funciona primero en modo local para probar la experiencia.
-- Con Google conectado, crea y usa un Google Sheet llamado **Mis gastos** en el Drive del usuario.
-- No hay base de datos central de movimientos.
-- Las frases sencillas se interpretan con reglas locales instantáneas.
-- Si una frase necesita más interpretación, puede cargar un modelo abierto con WebLLM en el dispositivo.
-- Sin API de IA y sin suscripción.
+La web corre en GitHub Pages.
 
-## Activar Google
+- Los gastos simples se interpretan inmediatamente.
+- WebLLM queda como respaldo local para frases con más contexto.
+- Foto usa OCR en el dispositivo.
+- Audio usa transcripción local.
+- Sin conexión, los movimientos quedan pendientes en el dispositivo.
+- Al reconectar Google, los gastos locales pendientes se sincronizan automáticamente con el Sheet.
 
-La app está lista para recibir un OAuth Client ID.
+Google usa el scope `drive.file`, limitado a los archivos que esta aplicación crea o usa.
 
-1. Crea o selecciona un proyecto en Google Cloud.
-2. Habilita **Google Sheets API** y **Google Drive API**.
-3. Configura Google Auth Platform / OAuth.
-4. Crea un cliente **Web application**.
-5. Agrega como Authorized JavaScript origin:
-   - `https://antonydis.github.io`
-6. Mientras el proyecto esté en Testing, agrega las cuentas que harán la prueba.
-7. Pega el Client ID en `config.js`.
+## Telegram
 
-No hace falta API key de Google ni una API key para un modelo.
+El backend está en `worker/` y está preparado para Cloudflare Workers + D1.
 
-La app solicita `https://www.googleapis.com/auth/drive.file`, que limita el acceso a archivos creados o usados por esta aplicación.
+Flujo:
 
-## Probar sin Google
+1. Usuario escribe `/start` al bot.
+2. Telegram entrega **Conectar Google**.
+3. La web abre el OAuth de servidor.
+4. Se crea o reutiliza `Mis gastos` en el Drive de esa persona.
+5. Telegram queda asociado a ese Sheet.
+6. El usuario manda un gasto.
+7. El bot propone la interpretación.
+8. **Guardar** escribe directamente la fila en Google Sheets.
 
-Si `googleClientId` está vacío, la aplicación funciona en **modo de prueba local** y guarda los movimientos únicamente en el navegador de ese dispositivo.
+D1 no almacena movimientos. Guarda únicamente el vínculo Telegram/Google/Sheet, el refresh token cifrado y estados temporales de confirmación.
 
-Esto permite validar hoy:
+La primera versión de Telegram procesa texto. El adaptador `worker/src/model.js` permite usar después un modelo open source servido por Ollama o llama.cpp mediante una API OpenAI-compatible, sin cambiar el bot.
 
-- registro en lenguaje natural;
-- confirmación antes de guardar;
-- resumen del mes;
-- categoría principal;
-- últimos movimientos.
+## Estructura
 
-## Modelo local
-
-El respaldo local usa WebLLM y se carga solamente cuando las reglas rápidas no pueden interpretar bien una frase.
-
-Modelo inicial: `Qwen3-0.6B-q4f16_1-MLC`.
-
-El primer uso del modelo puede requerir una descarga considerable. Por eso no se fuerza para frases simples.
-
-## Próximas pruebas
-
-1. Validar registro por texto con familia.
-2. Agregar lectura local de facturas.
-3. Agregar dictado/transcripción local.
-4. Probar recordatorio diario.
-5. Evaluar WhatsApp como canal adicional.
+- `index.html`, `app.js`, `styles.css`: web/PWA.
+- `config.js`: configuración pública del frontend.
+- `worker/`: backend Telegram + OAuth offline + Google Sheets.
+- `worker/schema.sql`: tablas D1.
+- `worker/wrangler.toml`: configuración Cloudflare.
 
 ## Privacidad
 
-- No existe una base de datos nuestra de gastos.
-- En modo local, los datos viven en el navegador.
-- Con Google, los movimientos viven en el Sheet del usuario.
-- El modelo de respaldo corre en el dispositivo.
+- No hay una base central de movimientos.
+- Los gastos viven en el Google Sheet del usuario.
+- Los gastos offline de la web viven temporalmente en el dispositivo hasta sincronizarse.
+- El backend de Telegram necesita conservar un refresh token cifrado para poder escribir en el Sheet cuando la web está cerrada.
+- Foto y audio de la web se procesan localmente.
