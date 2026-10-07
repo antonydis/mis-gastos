@@ -1,4 +1,4 @@
-const CACHE = "mis-gastos-shell-v1";
+const CACHE = "mis-gastos-shell-v2";
 const ASSETS = ["./","./index.html","./styles.css","./config.js","./app.js","./manifest.webmanifest","./icon.svg"];
 
 self.addEventListener("install", (event) => {
