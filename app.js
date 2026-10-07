@@ -749,6 +749,18 @@ async function createExpenseSheet() {
   return {id, name:"Mis gastos", webViewLink:`https://docs.google.com/spreadsheets/d/${id}/edit`};
 }
 
+async function syncLocalToGoogle() {
+  const pending = localRows();
+  if (!pending.length) return 0;
+  const range = encodeURIComponent("Movimientos!A:J");
+  await googleFetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${state.sheetId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {method:"POST", body:JSON.stringify({values:pending.map(objectToSheetRow)})}
+  );
+  localStorage.removeItem(STORAGE_KEY);
+  return pending.length;
+}
+
 async function ensureGoogleSheet() {
   let file = await findExpenseSheet();
   if (!file) file = await createExpenseSheet();
@@ -757,7 +769,10 @@ async function ensureGoogleSheet() {
   state.backend = "google";
   el("sheetLink").href = state.sheetUrl;
   el("sheetLink").hidden = false;
-  el("modeBanner").textContent = "Conectado. Tus movimientos se guardan en tu Google Drive.";
+  const synced = await syncLocalToGoogle();
+  el("modeBanner").textContent = synced
+    ? `Conectado. Sincronicé ${synced} gasto${synced === 1 ? "" : "s"} pendiente${synced === 1 ? "" : "s"} con tu Google Drive.`
+    : "Conectado. Tus movimientos se guardan en tu Google Drive.";
 }
 
 async function readRows() {
@@ -958,10 +973,56 @@ function setupGoogleButton() {
   el("googleButton").hidden = false;
 }
 
+function setupTelegramLinking() {
+  const params = new URLSearchParams(window.location.search);
+  const link = params.get("link");
+  const telegram = params.get("telegram");
+  const reason = params.get("reason");
+  const panel = el("telegramLinkPanel");
+  const title = el("telegramLinkTitle");
+  const text = el("telegramLinkText");
+  const button = el("telegramLinkButton");
+
+  if (telegram === "linked") {
+    panel.hidden = false;
+    title.textContent = "Telegram conectado";
+    text.textContent = "Listo. Ya puedes volver a Telegram y registrar gastos directamente en el mismo Google Sheet.";
+    button.hidden = true;
+    return;
+  }
+
+  if (telegram === "error") {
+    panel.hidden = false;
+    title.textContent = "No pude conectar Telegram";
+    text.textContent = reason === "expired-link"
+      ? "El enlace venció. Vuelve a Telegram y usa /link para generar uno nuevo."
+      : "Vuelve a Telegram y usa /link para intentarlo otra vez.";
+    button.hidden = true;
+    return;
+  }
+
+  if (!link) return;
+  panel.hidden = false;
+  title.textContent = "Conecta Telegram con tu Google";
+  text.textContent = "Después de esta autorización, los gastos que confirmes en Telegram se guardarán en tu hoja Mis gastos.";
+
+  if (!CONFIG.apiBaseUrl) {
+    button.disabled = true;
+    button.textContent = "Backend de Telegram pendiente";
+    return;
+  }
+
+  button.addEventListener("click", () => {
+    const base = CONFIG.apiBaseUrl.replace(/\/$/, "");
+    window.location.href = base + "/oauth/start?link=" + encodeURIComponent(link);
+  });
+}
+
 async function init() {
   const settings = getSettings();
   el("currencySelect").value = settings.currency;
   setupGoogleButton();
+  setupTelegramLinking();
   state.rows = localRows();
   renderDashboard();
   if (!navigator.onLine) {
