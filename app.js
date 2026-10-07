@@ -956,8 +956,19 @@ async function init() {
   setupGoogleButton();
   state.rows = localRows();
   renderDashboard();
+  if (!navigator.onLine) {
+    el("localModelStatus").textContent = "Sin conexión. Los casos simples funcionan; para preparar modelo, foto o voz por primera vez necesitas Internet.";
+  }
 
   el("registerButton").addEventListener("click", proposeFromText);
+  el("photoButton").addEventListener("click", () => el("photoInput").click());
+  el("photoInput").addEventListener("change", () => handlePhoto(el("photoInput").files?.[0]));
+  el("audioButton").addEventListener("click", toggleAudioRecording);
+  el("clarificationButton").addEventListener("click", answerClarification);
+  el("clarificationAnswer").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") answerClarification();
+  });
+  el("prepareModelButton").addEventListener("click", prepareLocalUnderstanding);
   el("expenseText").addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") proposeFromText();
   });
