@@ -26,13 +26,27 @@
     <section class="composer" aria-labelledby="register-title">
       <label id="register-title" for="expenseText">Escríbelo como te salga.</label>
       <textarea id="expenseText" rows="4" placeholder="Ej. 850 en gasolina y 300 en café"></textarea>
+      <div class="capture-actions" aria-label="Otras formas de registrar">
+        <button id="photoButton" class="capture-button" type="button">Foto de recibo</button>
+        <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+        <button id="audioButton" class="capture-button" type="button">Hablar</button>
+      </div>
       <div class="hint-row">
-        <span>También puedes poner “ayer” o indicar la moneda.</span>
+        <span>Escribe, toma una foto o cuéntalo con tu voz.</span>
       </div>
       <button id="registerButton" class="button primary" type="button">Registrar</button>
       <div class="quick-examples" aria-label="Ejemplos">
         <button type="button" data-example="850 en gasolina">850 en gasolina</button>
         <button type="button" data-example="Ayer gasté 2300 en supermercado y 450 en almuerzo">Ayer: supermercado y almuerzo</button>
+      </div>
+    </section>
+
+    <section id="clarification" class="clarification" hidden aria-live="polite">
+      <p class="eyebrow">Me falta un dato</p>
+      <h2 id="clarificationQuestion">Antes de guardar…</h2>
+      <div class="clarification-form">
+        <input id="clarificationAnswer" type="text" autocomplete="off" placeholder="Escribe la respuesta">
+        <button id="clarificationButton" class="button primary" type="button">Continuar</button>
       </div>
     </section>
 
@@ -108,7 +122,9 @@
           <option value="CAD">Dólar canadiense (CAD)</option>
           <option value="EUR">Euro (EUR)</option>
         </select>
-        <p id="localModelStatus" class="muted">La comprensión avanzada se prepara solo si hace falta.</p>
+        <p id="localModelStatus" class="muted">La comprensión local se descarga una vez y luego queda en este dispositivo.</p>
+        <button id="prepareModelButton" class="button secondary" type="button">Preparar comprensión local</button>
+        <p class="muted">Foto y voz también se procesan en este dispositivo. La primera vez necesitan descargar sus componentes.</p>
         <button id="clearLocalButton" class="button danger" type="button">Borrar prueba local</button>
       </div>
     </details>
