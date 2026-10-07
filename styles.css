@@ -363,3 +363,16 @@ textarea:focus,select:focus,button:focus-visible,a:focus-visible{
   .capture-actions{margin-left:26px}
   .clarification-form{grid-template-columns:1fr}
 }
+
+.telegram-link{
+  margin-top:14px;
+  padding:18px;
+  border:2px solid var(--green);
+  background:#eef6f1;
+}
+.telegram-link p:not(.eyebrow){
+  margin:8px 0 14px;
+  color:var(--muted);
+  line-height:1.45;
+}
+.telegram-link .button{width:100%}
