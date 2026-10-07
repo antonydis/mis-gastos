@@ -314,3 +314,52 @@ textarea:focus,select:focus,button:focus-visible,a:focus-visible{
   .stat{min-height:96px}
   .category-row{grid-template-columns:98px 1fr auto}
 }
+
+
+.capture-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin:10px 0 0 38px;
+}
+.capture-button{
+  min-height:44px;
+  border:1px solid var(--line);
+  border-radius:4px;
+  background:#fffaf1;
+  color:var(--ink);
+  font-weight:700;
+  cursor:pointer;
+}
+.capture-button.recording{
+  background:#f8e7e6;
+  color:var(--danger);
+  border-color:#dcb4b0;
+}
+.clarification{
+  border:2px solid #a06a2f;
+  background:#fff7e8;
+}
+.clarification-form{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:8px;
+  margin-top:14px;
+}
+.clarification-form input{
+  min-width:0;
+  border:1px solid #d8c3a7;
+  border-radius:4px;
+  background:#fff;
+  color:var(--ink);
+  padding:11px 12px;
+  font-size:16px;
+}
+.proposal-row .merchant{
+  color:var(--green);
+  font-weight:650;
+}
+@media(max-width:520px){
+  .capture-actions{margin-left:26px}
+  .clarification-form{grid-template-columns:1fr}
+}
