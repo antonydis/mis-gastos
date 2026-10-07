@@ -334,34 +334,67 @@ async function loadLocalModel() {
   finally { state.modelLoading = null; }
 }
 
-async function parseWithLocalModel(text) {
+function parseStructuredModelResult(text) {
+  const cleaned = String(text || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const startObj = cleaned.indexOf("{");
+  const endObj = cleaned.lastIndexOf("}");
+  if (startObj >= 0 && endObj > startObj) return JSON.parse(cleaned.slice(startObj, endObj + 1));
+  const expenses = extractJson(cleaned);
+  return {expenses, question:""};
+}
+
+async function parseWithLocalModel(text, source = "Texto") {
   const engine = await loadLocalModel();
   const settings = getSettings();
   const today = localISO();
   const yesterday = localISO(addDays(new Date(), -1));
-  const prompt = `Convierte el mensaje del usuario en gastos estructurados.
+  const prompt = `Interpreta el mensaje como un registro de gastos personales.
 Hoy es ${today}. Ayer fue ${yesterday}.
 Moneda por defecto: ${settings.currency}.
 Categorías permitidas: ${CATEGORIES.join(", ")}.
-Devuelve SOLO un arreglo JSON. Cada elemento debe tener:
-date (YYYY-MM-DD), description, merchant, category, amount (número), currency (NIO/USD/CAD/EUR), paymentMethod.
-No inventes montos. Si no puedes identificar un monto, devuelve [].
 
-Mensaje: ${JSON.stringify(text)}`;
+Devuelve SOLO JSON válido con esta forma:
+{
+  "expenses": [
+    {
+      "date": "YYYY-MM-DD",
+      "description": "qué se compró o para qué fue, corto y natural",
+      "merchant": "nombre del comercio si aparece, si no vacío",
+      "category": "una categoría permitida",
+      "amount": 0,
+      "currency": "NIO|USD|CAD|EUR",
+      "paymentMethod": ""
+    }
+  ],
+  "question": ""
+}
+
+Reglas:
+- Usa el contexto, no palabras aisladas.
+- "almorcé en La Loma y gasté 450" significa description "Almuerzo", merchant "La Loma", category "Restaurantes", amount 450.
+- "compré 2300 en supermercado" significa category "Supermercado".
+- No inventes comercios, montos ni métodos de pago.
+- La fecha puede inferirse de hoy/ayer y la moneda puede usar la moneda por defecto.
+- Si falta un dato indispensable para registrar correctamente, no adivines: deja expenses con lo que sea seguro y escribe UNA pregunta corta en "question".
+- Un monto es indispensable. Comercio y método de pago no lo son.
+- Si hay varios gastos, devuelve un elemento por gasto.
+
+Entrada (${source}): ${JSON.stringify(text)}`;
 
   const response = await engine.chat.completions.create({
     messages:[
-      {role:"system",content:"Extraes gastos personales con precisión. Responde solamente JSON válido, sin explicación."},
+      {role:"system",content:"Estructuras gastos con precisión y haces una sola pregunta cuando realmente falta un dato indispensable. Respondes solo JSON."},
       {role:"user",content:prompt}
     ],
     temperature:0,
-    max_tokens:450,
+    max_tokens:600,
     extra_body:{enable_thinking:false}
   });
 
   const raw = response.choices?.[0]?.message?.content || "";
-  const parsed = extractJson(raw);
-  return parsed.map((item) => ({
+  const result = parseStructuredModelResult(raw);
+  const parsed = Array.isArray(result.expenses) ? result.expenses : [];
+  const expenses = parsed.map((item) => ({
     id:uid(),
     date:/^\d{4}-\d{2}-\d{2}$/.test(item.date || "") ? item.date : dateFromText(text),
     description:String(item.description || "Gasto").trim().slice(0,120),
@@ -372,11 +405,74 @@ Mensaje: ${JSON.stringify(text)}`;
       return CATEGORIES.includes(item.category) ? item.category : "Otros";
     })(),
     amount:Number(item.amount),
-    currency:["NIO","USD","CAD","EUR"].includes(String(item.currency).toUpperCase()) ? String(item.currency).toUpperCase() : settings.currency,
+    currency:["NIO","USD","CAD","EUR"].includes(String(item.currency || "").toUpperCase()) ? String(item.currency).toUpperCase() : settings.currency,
     paymentMethod:String(item.paymentMethod || "").trim().slice(0,50),
-    source:"Texto",
+    source,
     registeredAt:new Date().toISOString()
   })).filter((x) => Number.isFinite(x.amount) && x.amount > 0);
+
+  return {expenses, question:String(result.question || "").trim().slice(0,180)};
+}
+
+function showClarification(question, originalText, source) {
+  state.clarificationOriginal = originalText;
+  state.clarificationSource = source || "Texto";
+  el("clarificationQuestion").textContent = question || "¿Qué dato falta?";
+  el("clarificationAnswer").value = "";
+  el("clarification").hidden = false;
+  el("proposal").hidden = true;
+  el("clarification").scrollIntoView({behavior:"smooth", block:"nearest"});
+  setTimeout(() => el("clarificationAnswer").focus(), 80);
+}
+
+async function answerClarification() {
+  const answer = el("clarificationAnswer").value.trim();
+  if (!answer) return;
+  const combined = `${state.clarificationOriginal}\nAclaración del usuario: ${answer}`;
+  el("clarificationButton").disabled = true;
+  try {
+    const result = await parseWithLocalModel(combined, state.clarificationSource);
+    if (result.question) return showClarification(result.question, combined, state.clarificationSource);
+    if (!result.expenses.length) throw new Error("Todavía no tengo suficiente información para registrar el gasto.");
+    el("clarification").hidden = true;
+    renderProposal(result.expenses);
+  } catch (err) {
+    setStatus(err.message || "No pude completar ese gasto.");
+  } finally {
+    el("clarificationButton").disabled = false;
+  }
+}
+
+async function processNaturalInput(text, source = "Texto", forceModel = false) {
+  const quick = quickParse(text);
+  quick.expenses.forEach((x) => { x.source = source; });
+  let expenses = quick.expenses;
+
+  if (forceModel || shouldUseLocalModel(text, quick)) {
+    try {
+      const result = await parseWithLocalModel(text, source);
+      if (result.question) {
+        showClarification(result.question, text, source);
+        return;
+      }
+      if (result.expenses.length) expenses = result.expenses;
+    } catch (modelError) {
+      if (!expenses.length) {
+        if (!navigator.onLine) {
+          showClarification("Estoy sin conexión y este caso necesita más contexto. ¿Puedes indicar el monto y qué compraste?", text, source);
+          return;
+        }
+        throw modelError;
+      }
+    }
+  }
+
+  if (!expenses.length) {
+    showClarification("¿Cuánto gastaste y en qué fue?", text, source);
+    return;
+  }
+  el("clarification").hidden = true;
+  renderProposal(expenses);
 }
 
 function renderProposal(expenses) {
@@ -386,6 +482,7 @@ function renderProposal(expenses) {
     <div class="proposal-row">
       <div>
         <strong>${escapeHtml(x.description)}</strong>
+        ${x.merchant ? `<small class="merchant">${escapeHtml(x.merchant)}</small>` : ""}
         <small>${escapeHtml(x.date)}${x.paymentMethod ? " · " + escapeHtml(x.paymentMethod) : ""}</small>
       </div>
       <strong>${escapeHtml(money(x.amount, x.currency))}</strong>
@@ -409,21 +506,10 @@ async function proposeFromText() {
   const text = el("expenseText").value.trim();
   if (!text) return setStatus("Escribe qué gastaste.");
   setStatus("");
-  setBusy(true, "Revisando…");
+  setBusy(true, "Entendiendo…");
 
   try {
-    const quick = quickParse(text);
-    let expenses = quick.expenses;
-    if (quick.ambiguous) {
-      try {
-        const local = await parseWithLocalModel(text);
-        if (local.length) expenses = local;
-      } catch (modelError) {
-        if (!expenses.length) throw modelError;
-      }
-    }
-    if (!expenses.length) throw new Error('No encontré un monto. Prueba algo como “850 en gasolina”.');
-    renderProposal(expenses);
+    await processNaturalInput(text, "Texto");
   } catch (err) {
     setStatus(err.message || "No pude entender ese gasto.");
   } finally {
