@@ -1,0 +1,14 @@
+name = "mis-gastos-api"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+FRONTEND_URL = "https://antonydis.github.io/mis-gastos/"
+PUBLIC_BASE_URL = "https://REPLACE-WITH-WORKER-URL"
+GOOGLE_CLIENT_ID = "115193157283-q79sei1assdr1ue415ho1581rlk67k3p.apps.googleusercontent.com"
+DEFAULT_TIMEZONE = "America/Managua"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mis-gastos"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
