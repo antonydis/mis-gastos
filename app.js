@@ -13,7 +13,7 @@ const CATEGORIES = [
 
 const CATEGORY_KEYWORDS = {
   Supermercado:["supermercado","super","mercado","pricesmart","price smart","walmart","despensa","comestibles","abarrotes","pulperia","pulpería"],
-  Restaurantes:["restaurante","restaurant","restaurantes","comida","almuerzo","cena","desayuno","cafe","cafeteria","coffee","bar","delivery","ubereats","uber eats","rappi"],
+  Restaurantes:["restaurante","restaurant","restaurantes","comida","almuerzo","almorce","almorze","cena","cene","desayuno","desayune","comi","merienda","cafe","cafeteria","coffee","bar","delivery","ubereats","uber eats","rappi"],
   Transporte:["taxi","uber","indriver","bus","autobus","transporte","parqueo","parking","peaje","metro"],
   Gasolina:["gasolina","combustible","gasolinera","diesel","puma","shell","esso"],
   Casa:["casa","hogar","mueble","limpieza","reparacion","alquiler","arriendo","renta"],
@@ -39,7 +39,15 @@ const state = {
   backend: "local",
   model: null,
   modelLoading: null,
-  rows: []
+  rows: [],
+  clarificationOriginal: "",
+  clarificationSource: "Texto",
+  mediaRecorder: null,
+  audioChunks: [],
+  transcriber: null,
+  transcriberLoading: null,
+  ocrWorker: null,
+  ocrWorkerLoading: null
 };
 
 function localISO(date = new Date()) {
@@ -239,13 +247,32 @@ function quickParse(text) {
       ambiguous = true;
       continue;
     }
-    const description = cleanDescription(segment, matches[0]);
+    let description = cleanDescription(segment, matches[0]);
+    let merchant = "";
+    let category = categoryFor(description + " " + segment);
+
+    const normalizedSegment = normalizeText(segment);
+    const mealMap = [
+      [/\balmorc|\balmuerz/, "Almuerzo"],
+      [/\bdesayun/, "Desayuno"],
+      [/\bcen(?:e|a|ar)|\bcena\b/, "Cena"],
+      [/\bmeri(?:enda|ende)/, "Merienda"],
+      [/\bcomi\b|\bcomida\b/, "Comida"]
+    ];
+    const meal = mealMap.find(([pattern]) => pattern.test(normalizedSegment));
+    if (meal) {
+      description = meal[1];
+      category = "Restaurantes";
+      const merchantMatch = segment.match(/\b(?:en|del|de la)\s+(.+?)(?=\s+(?:donde|por|que|me\s+gast[eé]|gast[eé]|pagu[eé])\b|$)/i);
+      if (merchantMatch) merchant = merchantMatch[1].trim().replace(/[,.]+$/,"");
+    }
+
     expenses.push({
       id: uid(),
       date,
       description,
-      merchant:"",
-      category:categoryFor(description + " " + segment),
+      merchant,
+      category,
       amount,
       currency:currencyFor(segment, settings.currency),
       paymentMethod:paymentFor(segment),
@@ -257,6 +284,15 @@ function quickParse(text) {
   const totalNumbers = [...normalized.matchAll(/(?:US\$|C\$|\$|€)?\s*\d[\d.,]*/g)].length;
   if (!expenses.length || totalNumbers !== expenses.length) ambiguous = true;
   return {expenses, ambiguous};
+}
+
+function shouldUseLocalModel(text, quick) {
+  if (quick.ambiguous || !quick.expenses.length) return true;
+  if (quick.expenses.some((x) => x.category === "Otros")) return true;
+  const normalized = normalizeText(text);
+  if (quick.expenses.length > 1 && /\b(en|donde|almorc|desayun|cen|comi|comida|compre|pague)\b/.test(normalized)) return true;
+  if (/\b(donde|restaurante|tienda|local|factura|recibo)\b/.test(normalized)) return true;
+  return false;
 }
 
 function extractJson(text) {
