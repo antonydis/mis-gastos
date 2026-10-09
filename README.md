@@ -60,3 +60,13 @@ La primera versión de Telegram procesa texto. El adaptador `worker/src/model.js
 - Los gastos offline de la web viven temporalmente en el dispositivo hasta sincronizarse.
 - El backend de Telegram necesita conservar un refresh token cifrado para poder escribir en el Sheet cuando la web está cerrada.
 - Foto y audio de la web se procesan localmente.
+
+
+## Testing
+
+Las pruebas automatizadas de foto, audio, categorización contextual y sesión Google están en:
+
+- `tests/media-pipeline.test.mjs`
+- `docs/testing-media.md`
+
+El workflow de GitHub Pages ejecuta estas pruebas antes de publicar.
