@@ -30,6 +30,9 @@ jobs:
       - name: Run media pipeline tests
         run: node tests/media-pipeline.test.mjs
 
+      - name: Run Telegram flow tests
+        run: node tests/telegram-flow.test.mjs
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
