@@ -16,7 +16,7 @@ assert.match(html, /id="photoInput"[^>]+accept="image\/\*"[^>]+capture="environm
 has(app, 'apiMedia("/ai/receipt", file)', "Foto usa backend");
 has(worker, "url.pathname==='/ai/receipt'", "Worker expone receipt endpoint");
 has(api, 'type: "input_image"', "Recibo se manda como imagen al modelo");
-has(api, 'gpt-5.6-luna', "Modelo visual barato configurado");
+has(api, 'gpt-6-luna', "Modelo visual barato configurado");
 has(api, 'type: "json_schema"', "Salida estructurada por schema");
 
 // Audio -> Worker -> OpenAI transcription -> structured expenses.
