@@ -1,0 +1,13 @@
+{
+  "name": "mis-gastos",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "check": "node --check app.js && node --check config.js && node --check sw.js && node --check worker/src/index.js && node --check worker/src/utils.js && node --check worker/src/google.js && node --check worker/src/telegram.js && node --check worker/src/model.js && node --check worker/src/openai.js",
+    "test": "node tests/media-pipeline.test.mjs",
+    "deploy:worker": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.149.0"
+  }
+}
