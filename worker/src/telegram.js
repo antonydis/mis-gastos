@@ -1,5 +1,5 @@
 import {decrypt,encrypt,money,randomCode} from './utils.js';
-import {appendExpenses,refreshAccess} from './google.js';
+import {appendExpenses,deleteExpensesByIds,refreshAccess} from './google.js';
 import {analyzeText,analyzeReceipt,analyzeAudio} from './openai.js';
 
 const LINK_TTL=15*60*1000;
@@ -24,7 +24,7 @@ export async function setupWebhook(env){
   return call('setWebhook',{
     url:env.PUBLIC_BASE_URL.replace(/\/$/,'')+'/telegram/webhook',
     secret_token:env.TELEGRAM_WEBHOOK_SECRET,
-    allowed_updates:['message'],
+    allowed_updates:['message','callback_query'],
     drop_pending_updates:true
   },env);
 }
@@ -75,11 +75,14 @@ function savedMessage(expenses){
   return 'Guardado en Mis gastos:\n'+lines.join('\n');
 }
 
-async function saveClearExpenses(chat,link,result,env){
+async function saveClearExpenses(uid,chat,link,result,env){
   if(!result.expenses?.length)throw new Error('No encontré un gasto claro.');
   const access=await refreshAccess(link.google_refresh_token,env);
-  await appendExpenses(link.sheet_id,result.expenses,access);
-  return send(chat,savedMessage(result.expenses),env);
+  const ids=await appendExpenses(link.sheet_id,result.expenses,access);
+  await env.DB.prepare(
+    'INSERT INTO pending VALUES(?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,expires_at=excluded.expires_at'
+  ).bind(uid,'undo',JSON.stringify({ids}),Date.now()+10*60*1000).run();
+  return send(chat,savedMessage(result.expenses),env,{inline_keyboard:[[{text:'Deshacer',callback_data:'expense:undo'}]]});
 }
 
 async function rememberClarification(uid,context,env){
@@ -110,7 +113,7 @@ async function handleClarification(uid,chat,text,link,pending,env){
   }
 
   await env.DB.prepare('DELETE FROM pending WHERE telegram_user_id=?').bind(uid).run();
-  return saveClearExpenses(chat,link,result,env);
+  return saveClearExpenses(uid,chat,link,result,env);
 }
 
 async function processText(uid,chat,text,link,env){
@@ -119,7 +122,7 @@ async function processText(uid,chat,text,link,env){
     await rememberClarification(uid,{source:'Telegram',originalText:text,partial:result.expenses||[],question:result.question},env);
     return send(chat,result.question,env);
   }
-  return saveClearExpenses(chat,link,result,env);
+  return saveClearExpenses(uid,chat,link,result,env);
 }
 
 async function processPhoto(uid,chat,message,link,env){
@@ -133,7 +136,7 @@ async function processPhoto(uid,chat,message,link,env){
     await rememberClarification(uid,{source:'Foto',originalText:message.caption||'',partial:result.expenses||[],question:result.question},env);
     return send(chat,result.question,env);
   }
-  return saveClearExpenses(chat,link,result,env);
+  return saveClearExpenses(uid,chat,link,result,env);
 }
 
 async function processAudio(uid,chat,message,link,env){
@@ -152,10 +155,34 @@ async function processAudio(uid,chat,message,link,env){
     },env);
     return send(chat,result.question,env);
   }
-  return saveClearExpenses(chat,link,result,env);
+  return saveClearExpenses(uid,chat,link,result,env);
+}
+
+async function handleCallback(cb,env){
+  await call('answerCallbackQuery',{callback_query_id:cb.id},env).catch(()=>{});
+  if(cb.data!=='expense:undo')return;
+  const uid=String(cb.from.id);
+  const chat=String(cb.message?.chat?.id||cb.from.id);
+  const link=await userLink(uid,env);
+  if(!link)return send(chat,'Tu Google ya no está conectado. Usa /link para volver a conectarlo.',env);
+  const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(uid).first();
+  if(!pending||pending.kind!=='undo'||Number(pending.expires_at)<=Date.now()){
+    return send(chat,'Ese gasto ya no se puede deshacer desde aquí.',env);
+  }
+  try{
+    const payload=JSON.parse(pending.payload||'{}');
+    const access=await refreshAccess(link.google_refresh_token,env);
+    const removed=await deleteExpensesByIds(link.sheet_id,payload.ids||[],access);
+    await env.DB.prepare('DELETE FROM pending WHERE telegram_user_id=?').bind(uid).run();
+    return send(chat,removed?'Listo. Quité ese gasto de Mis gastos.':'No encontré ese gasto en la hoja. No hice cambios.',env);
+  }catch(e){
+    console.error('Telegram undo error',e);
+    return send(chat,'No pude quitar ese gasto. No hice ningún cambio adicional.',env);
+  }
 }
 
 export async function handleUpdate(update,env){
+  if(update.callback_query)return handleCallback(update.callback_query,env);
   const m=update.message;
   if(!m||m.chat?.type!=='private')return;
 
@@ -184,7 +211,7 @@ export async function handleUpdate(update,env){
     return send(chat,'Envíame un gasto por texto, una foto del recibo o un audio.',env);
   }catch(e){
     console.error('Telegram expense error',e);
-    return send(chat,'No pude registrar ese gasto. Intenta nuevamente o escríbelo en texto.',env);
+    return send(chat,'No pude registrar ese gasto y no se guardó nada. Intenta nuevamente o escríbelo en texto.',env);
   }
 }
 
