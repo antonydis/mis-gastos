@@ -3,6 +3,7 @@ const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const STORAGE_KEY = "mis-gastos-local-v1";
 const SETTINGS_KEY = "mis-gastos-settings-v1";
 const CATEGORY_MEMORY_KEY = "mis-gastos-category-memory-v1";
+const GOOGLE_CONNECTED_HINT_KEY = "mis-gastos-google-connected-v1";
 const MODEL_VERSION = "0.2.82";
 
 const CATEGORIES = [
@@ -769,6 +770,10 @@ async function ensureGoogleSheet() {
   state.backend = "google";
   el("sheetLink").href = state.sheetUrl;
   el("sheetLink").hidden = false;
+  el("headerSheetLink").href = state.sheetUrl;
+  el("googleAccount").hidden = false;
+  el("googleButton").hidden = true;
+  localStorage.setItem(GOOGLE_CONNECTED_HINT_KEY, "1");
   const synced = await syncLocalToGoogle();
   el("modeBanner").textContent = synced
     ? `Conectado. Sincronicé ${synced} gasto${synced === 1 ? "" : "s"} pendiente${synced === 1 ? "" : "s"} con tu Google Drive.`
@@ -934,42 +939,77 @@ function answerQuestion(type) {
   el("answer").hidden = false;
 }
 
-async function connectGoogle() {
-  if (!CONFIG.googleClientId) return;
-  if (!window.google?.accounts?.oauth2) {
-    setStatus("Google todavía está cargando. Intenta de nuevo.");
-    return;
+function waitForGoogleIdentity(timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const check = () => {
+      if (window.google?.accounts?.oauth2) return resolve(true);
+      if (Date.now() - started >= timeoutMs) return resolve(false);
+      setTimeout(check, 120);
+    };
+    check();
+  });
+}
+
+async function connectGoogle(options = {}) {
+  const silent = Boolean(options.silent);
+  if (!CONFIG.googleClientId) return false;
+  const ready = await waitForGoogleIdentity();
+  if (!ready) {
+    if (!silent) setStatus("Google todavía está cargando. Intenta de nuevo.");
+    return false;
   }
-  if (!state.tokenClient) {
+
+  return new Promise((resolve) => {
     state.tokenClient = google.accounts.oauth2.initTokenClient({
       client_id:CONFIG.googleClientId,
       scope:GOOGLE_SCOPE,
       callback:async (response) => {
-        if (response.error) return setStatus("No se pudo conectar Google.");
+        if (response.error) {
+          if (!silent) setStatus("No se pudo conectar Google.");
+          return resolve(false);
+        }
         state.accessToken = response.access_token;
         try {
-          setStatus("Preparando tu hoja…");
+          if (!silent) setStatus("Cargando tus gastos…");
           await ensureGoogleSheet();
           await refresh();
-          el("googleButton").textContent = "Google conectado";
+          el("googleAccountStatus").textContent = "Google conectado";
           setStatus("");
+          resolve(true);
         } catch (err) {
           state.backend = "local";
-          setStatus(err.message || "No pude preparar tu hoja.");
+          if (!silent) setStatus(err.message || "No pude preparar tu hoja.");
+          resolve(false);
         }
       }
     });
-  }
-  state.tokenClient.requestAccessToken({prompt:state.accessToken ? "" : "consent"});
+
+    try {
+      state.tokenClient.requestAccessToken({prompt:silent ? "" : "consent"});
+    } catch (err) {
+      if (!silent) setStatus("No pude abrir el acceso a Google.");
+      resolve(false);
+    }
+  });
+}
+
+async function trySilentGoogleReconnect() {
+  if (!navigator.onLine || !localStorage.getItem(GOOGLE_CONNECTED_HINT_KEY)) return;
+  await connectGoogle({silent:true});
 }
 
 function setupGoogleButton() {
+  el("googleAccount").hidden = true;
   if (!CONFIG.googleClientId) {
     el("modeBanner").textContent = "Prueba local: tus gastos se guardan solo en este dispositivo.";
     el("googleButton").hidden = true;
     return;
   }
-  el("modeBanner").textContent = "Puedes probar aquí o conectar tu Google Drive.";
+  el("modeBanner").textContent = localStorage.getItem(GOOGLE_CONNECTED_HINT_KEY)
+    ? "Reconectando con tu Google Drive…"
+    : "Conecta Google para usar el mismo historial en todos tus dispositivos.";
+  el("googleButton").textContent = "Continuar con Google";
   el("googleButton").hidden = false;
 }
 
@@ -1051,7 +1091,7 @@ async function init() {
   });
   el("confirmProposal").addEventListener("click", saveProposal);
   document.querySelectorAll("[data-question]").forEach((b) => b.addEventListener("click", () => answerQuestion(b.dataset.question)));
-  el("googleButton").addEventListener("click", connectGoogle);
+  el("googleButton").addEventListener("click", () => connectGoogle());
   el("currencySelect").addEventListener("change", () => {
     saveSettings({currency:el("currencySelect").value});
     renderDashboard();
@@ -1072,6 +1112,8 @@ async function init() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
+
+  trySilentGoogleReconnect().catch(() => {});
 }
 
 init();
