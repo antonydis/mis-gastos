@@ -1,8 +1,20 @@
 import {googleAuthUrl,exchangeCode,ensureSheet} from './google.js';
 import {createLink,handleUpdate,saveGoogleLink,setupWebhook} from './telegram.js';
 import {randomCode} from './utils.js';
+import {analyzeReceipt,analyzeAudio} from './openai.js';
 
-function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8'}})}
+function corsHeaders(env,request){
+  const origin=request?.headers?.get?.('Origin')||'';
+  const allowed=(env.FRONTEND_URL||'').replace(/\/$/,'');
+  const allow=origin&&allowed&&origin===allowed?origin:allowed;
+  return {
+    'Access-Control-Allow-Origin':allow||'*',
+    'Access-Control-Allow-Methods':'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers':'Content-Type',
+    'Vary':'Origin'
+  };
+}
+function json(data,status=200,env,request){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8',...(env&&request?corsHeaders(env,request):{})}})}
 function front(env,params){const u=new URL(env.FRONTEND_URL);for(const [k,v] of Object.entries(params))u.searchParams.set(k,v);return Response.redirect(u.toString(),302)}
 
 async function oauthStart(url,env){
@@ -33,6 +45,27 @@ async function oauthCallback(url,env){
   return front(env,{telegram:'linked'});
 }
 
+function mediaProfile(form,env){
+  return {
+    currency:String(form.get('currency')||'NIO').toUpperCase(),
+    timezone:String(form.get('timezone')||env.DEFAULT_TIMEZONE||'America/Managua')
+  };
+}
+
+async function analyzeReceiptRequest(request,env){
+  const form=await request.formData();
+  const file=form.get('file');
+  const result=await analyzeReceipt(file,mediaProfile(form,env),env);
+  return json({ok:true,...result},200,env,request);
+}
+
+async function analyzeAudioRequest(request,env){
+  const form=await request.formData();
+  const file=form.get('file');
+  const result=await analyzeAudio(file,mediaProfile(form,env),env);
+  return json({ok:true,...result},200,env,request);
+}
+
 async function webhook(request,env,ctx){
   if(env.TELEGRAM_WEBHOOK_SECRET&&request.headers.get('X-Telegram-Bot-Api-Secret-Token')!==env.TELEGRAM_WEBHOOK_SECRET)return new Response('Forbidden',{status:403});
   const update=await request.json();
@@ -50,7 +83,10 @@ export default{
   async fetch(request,env,ctx){
     const url=new URL(request.url);
     try{
-      if(url.pathname==='/health')return json({ok:true,service:'mis-gastos-api'});
+      if(request.method==='OPTIONS')return new Response(null,{status:204,headers:corsHeaders(env,request)});
+      if(url.pathname==='/health')return json({ok:true,service:'mis-gastos-api'},200,env,request);
+      if(url.pathname==='/ai/receipt'&&request.method==='POST')return analyzeReceiptRequest(request,env);
+      if(url.pathname==='/ai/audio'&&request.method==='POST')return analyzeAudioRequest(request,env);
       if(url.pathname==='/oauth/start'&&request.method==='GET')return oauthStart(url,env);
       if(url.pathname==='/oauth/callback'&&request.method==='GET')return oauthCallback(url,env);
       if(url.pathname==='/telegram/webhook'&&request.method==='POST')return webhook(request,env,ctx);
@@ -58,7 +94,7 @@ export default{
         if(!env.SETUP_SECRET||request.headers.get('X-Setup-Secret')!==env.SETUP_SECRET)return json({ok:false,error:'Forbidden'},403);
         const result=await setupWebhook(env);return json({ok:true,result});
       }
-      return json({ok:false,error:'Not found'},404);
-    }catch(e){console.error(e);return json({ok:false,error:e.message||'Internal error'},500)}
+      return json({ok:false,error:'Not found'},404,env,request);
+    }catch(e){console.error(e);return json({ok:false,error:e.message||'Internal error'},500,env,request)}
   }
 };
