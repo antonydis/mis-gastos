@@ -23,6 +23,9 @@ has(telegram, "analyzeAudio(file", "Audio usa OpenAI transcription + structuring
 has(telegram, "call('getFile'", "Telegram descarga medios con getFile");
 has(telegram, "appendExpenses(link.sheet_id", "Gastos claros se escriben directamente al Sheet");
 has(telegram, "Guardado en Mis gastos", "Bot confirma después de guardar");
+has(telegram, "callback_data:'expense:undo'", "Bot ofrece Deshacer");
+has(telegram, "deleteExpensesByIds", "Deshacer elimina el gasto del Sheet");
+has(telegram, "no se guardó nada", "Fallo de registro se comunica explícitamente");
 
 // Solo se pregunta si el análisis necesita aclaración.
 has(telegram, "if(result.question)", "Ambigüedad abre aclaración");
