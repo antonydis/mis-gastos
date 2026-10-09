@@ -14,5 +14,12 @@
     "DEFAULT_TIMEZONE": "America/Managua",
     "OPENAI_VISION_MODEL": "gpt-6-luna",
     "OPENAI_TRANSCRIBE_MODEL": "gpt-4o-mini-transcribe"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mis-gastos",
+      "database_id": "dec384c0-85c5-4e78-a81b-4c51a244070d"
+    }
+  ]
 }
