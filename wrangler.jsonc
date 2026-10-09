@@ -11,7 +11,7 @@
     "FRONTEND_URL": "https://antonydis.github.io/mis-gastos/",
     "PUBLIC_BASE_URL": "https://mis-gastos.adiazsal.workers.dev",
     "GOOGLE_CLIENT_ID": "115193157283-q79sei1assdr1ue415ho1581rlk67k3p.apps.googleusercontent.com",
-    "DEFAULT_TIMEZONE": "America/Managua",
+    "DEFAULT_TIMEZONE": "America/Toronto",
     "OPENAI_VISION_MODEL": "gpt-6-luna",
     "OPENAI_TRANSCRIBE_MODEL": "gpt-4o-mini-transcribe"
   },
