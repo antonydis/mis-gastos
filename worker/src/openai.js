@@ -1,6 +1,6 @@
 import { CATEGORIES, localDate } from "./utils.js";
 
-const RECEIPT_MODEL = "gpt-5.6-luna";
+const RECEIPT_MODEL = "gpt-6-luna";
 const TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe";
 
 const expenseSchema = {
