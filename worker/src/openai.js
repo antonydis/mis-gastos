@@ -126,6 +126,14 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
+export async function analyzeText(text, profile, env, source = "Texto") {
+  const value=String(text||"").trim();
+  if(!value) throw new Error("Texto vacío.");
+  return structuredExpenseFromContent([
+    { type: "input_text", text: value }
+  ], profile, env, source);
+}
+
 export async function analyzeReceipt(file, profile, env) {
   if (!file || !file.type?.startsWith("image/")) throw new Error("Archivo de imagen inválido.");
   if (file.size > 8 * 1024 * 1024) throw new Error("La foto es demasiado grande. Máximo 8 MB.");
