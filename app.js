@@ -434,11 +434,16 @@ async function answerClarification() {
   const combined = `${state.clarificationOriginal}\nAclaración del usuario: ${answer}`;
   el("clarificationButton").disabled = true;
   try {
-    const result = await parseWithLocalModel(combined, state.clarificationSource);
+    const result = ["Foto","Audio"].includes(state.clarificationSource) && apiBase()
+      ? await apiTextClarification(combined, state.clarificationSource)
+      : await parseWithLocalModel(combined, state.clarificationSource);
     if (result.question) return showClarification(result.question, combined, state.clarificationSource);
-    if (!result.expenses.length) throw new Error("Todavía no tengo suficiente información para registrar el gasto.");
+    const expenses = ["Foto","Audio"].includes(state.clarificationSource)
+      ? hydrateApiExpenses(result.expenses, state.clarificationSource)
+      : result.expenses;
+    if (!expenses.length) throw new Error("Todavía no tengo suficiente información para registrar el gasto.");
     el("clarification").hidden = true;
-    renderProposal(result.expenses);
+    renderProposal(expenses);
   } catch (err) {
     const fallback = quickParse(combined);
     fallback.expenses.forEach((x) => { x.source = state.clarificationSource; });
@@ -541,82 +546,99 @@ async function getOcrWorker() {
   finally { state.ocrWorkerLoading = null; }
 }
 
+function apiBase() {
+  return String(CONFIG.apiBaseUrl || "").replace(/\/$/, "");
+}
+
+function hydrateApiExpenses(expenses, source) {
+  return (expenses || []).map((x) => ({
+    id: uid(),
+    date: /^\d{4}-\d{2}-\d{2}$/.test(x.date || "") ? x.date : localISO(),
+    description: String(x.description || "Gasto").trim().slice(0,120),
+    merchant: String(x.merchant || "").trim().slice(0,100),
+    category: CATEGORIES.includes(x.category) ? x.category : "Otros",
+    amount: Number(x.amount),
+    currency: ["NIO","USD","CAD","EUR"].includes(String(x.currency || "").toUpperCase())
+      ? String(x.currency).toUpperCase()
+      : getSettings().currency,
+    paymentMethod: String(x.paymentMethod || "").trim().slice(0,50),
+    source,
+    registeredAt: new Date().toISOString()
+  })).filter((x) => Number.isFinite(x.amount) && x.amount > 0);
+}
+
+function mediaForm(file) {
+  const form = new FormData();
+  form.append("file", file, file.name || "media");
+  form.append("currency", getSettings().currency);
+  form.append("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Managua");
+  return form;
+}
+
+async function apiMedia(path, file) {
+  const base = apiBase();
+  if (!base) throw new Error("El análisis en línea todavía no está configurado.");
+  const response = await fetch(base + path, { method:"POST", body:mediaForm(file) });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) throw new Error(data.error || "No pude analizar este archivo.");
+  return data;
+}
+
+async function apiTextClarification(text, source) {
+  const base = apiBase();
+  if (!base) throw new Error("El análisis en línea todavía no está configurado.");
+  const response = await fetch(base + "/ai/text", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      text,
+      source,
+      currency:getSettings().currency,
+      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Managua"
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) throw new Error(data.error || "No pude completar el análisis.");
+  return data;
+}
+
 async function handlePhoto(file) {
   if (!file) return;
   el("photoButton").disabled = true;
-  setStatus("Leyendo el recibo en este dispositivo…");
+  setStatus("Analizando el recibo…");
   try {
-    const worker = await getOcrWorker();
-    const result = await worker.recognize(file);
-    const text = String(result?.data?.text || "").trim();
-    if (!text) throw new Error("No pude leer texto de esa foto. Prueba con más luz y el recibo completo.");
-    await processNaturalInput(text, "Foto", true);
+    const data = await apiMedia("/ai/receipt", file);
+    const expenses = hydrateApiExpenses(data.expenses, "Foto");
+    if (data.question) {
+      showClarification(data.question, JSON.stringify(expenses), "Foto");
+      return;
+    }
+    if (!expenses.length) throw new Error("No pude encontrar un gasto claro en ese recibo.");
+    renderProposal(expenses);
     setStatus("");
   } catch (err) {
-    setStatus(err.message || "No pude leer esa foto.");
+    setStatus(err.message || "No pude analizar esa foto.");
   } finally {
     el("photoButton").disabled = false;
     el("photoInput").value = "";
   }
 }
 
-function resampleTo16k(data, sourceRate) {
-  if (sourceRate === 16000) return data;
-  const ratio = sourceRate / 16000;
-  const length = Math.max(1, Math.round(data.length / ratio));
-  const out = new Float32Array(length);
-  for (let i = 0; i < length; i++) {
-    const pos = i * ratio;
-    const left = Math.floor(pos);
-    const right = Math.min(left + 1, data.length - 1);
-    const mix = pos - left;
-    out[i] = data[left] * (1 - mix) + data[right] * mix;
-  }
-  return out;
-}
-
-async function decodeAudioTo16k(blob) {
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) throw new Error("Este navegador no puede preparar el audio.");
-  const ctx = new AudioCtx();
-  try {
-    const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
-    const mono = new Float32Array(buffer.length);
-    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-      const values = buffer.getChannelData(channel);
-      for (let i = 0; i < values.length; i++) mono[i] += values[i] / buffer.numberOfChannels;
-    }
-    return resampleTo16k(mono, buffer.sampleRate);
-  } finally {
-    await ctx.close().catch(() => {});
-  }
-}
-
-async function getTranscriber() {
-  if (state.transcriber) return state.transcriber;
-  if (state.transcriberLoading) return state.transcriberLoading;
-  state.transcriberLoading = (async () => {
-    setStatus("Preparando voz en este dispositivo…");
-    const {pipeline} = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/+esm");
-    state.transcriber = await pipeline("automatic-speech-recognition", "onnx-community/whisper-tiny");
-    return state.transcriber;
-  })();
-  try { return await state.transcriberLoading; }
-  finally { state.transcriberLoading = null; }
-}
-
 async function transcribeAndProcess(blob) {
   el("audioButton").disabled = true;
-  setStatus("Transcribiendo en este dispositivo…");
+  setStatus("Entendiendo tu audio…");
   try {
-    const transcriber = await getTranscriber();
-    const audio = await decodeAudioTo16k(blob);
-    const result = await transcriber(audio, {language:"spanish", task:"transcribe"});
-    const text = String(result?.text || "").trim();
-    if (!text) throw new Error("No pude entender el audio. Intenta hablar un poco más cerca del teléfono.");
-    el("expenseText").value = text;
-    setStatus("Entendí: “" + text.slice(0,120) + (text.length > 120 ? "…" : "") + "”");
-    await processNaturalInput(text, "Audio", true);
+    const file = new File([blob], "gasto.webm", {type:blob.type || "audio/webm"});
+    const data = await apiMedia("/ai/audio", file);
+    const expenses = hydrateApiExpenses(data.expenses, "Audio");
+    if (data.transcript) el("expenseText").value = data.transcript;
+    if (data.question) {
+      showClarification(data.question, (data.transcript || "") + "\n" + JSON.stringify(expenses), "Audio");
+      return;
+    }
+    if (!expenses.length) throw new Error("No pude identificar un gasto en el audio.");
+    renderProposal(expenses);
+    setStatus(data.transcript ? "Entendí tu audio. Revisa antes de guardar." : "");
   } catch (err) {
     setStatus(err.message || "No pude procesar el audio.");
   } finally {
