@@ -91,3 +91,8 @@ Once the secrets and Google OAuth redirect URI are configured, initialize the we
 `POST /admin/setup-webhook`
 
 using the `X-Setup-Secret` header.
+
+
+## Deployment trigger
+
+Git connection was re-authorized in Cloudflare on 2026-10-09. This update intentionally triggers a fresh production deployment so Cloudflare reads the root `wrangler.jsonc` and deploys `worker/src/index.js`.
