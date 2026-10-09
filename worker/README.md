@@ -1,56 +1,96 @@
 # Telegram + Google Sheets
 
-Backend de Cloudflare Worker para vincular un chat privado de Telegram con el Google Sheet `Mis gastos` del usuario.
+Backend de Cloudflare Worker para vincular una cuenta de Telegram con el Google Sheet `Mis gastos` del usuario.
 
-## Flujo
+## Objetivo del MVP
 
-1. El usuario envía `/start` al bot.
-2. El bot entrega un botón **Conectar Google**.
-3. La web abre el OAuth del Worker.
-4. Google entrega acceso offline al Worker.
-5. El Worker crea o reutiliza `Mis gastos` en el Drive del usuario.
-6. El usuario envía un gasto por Telegram.
-7. El bot propone la interpretación y pide **Guardar** o **Corregir**.
-8. Al confirmar, la fila se escribe directamente en Google Sheets.
+La primera vez:
 
-## Datos que sí guarda D1
+1. El usuario abre `@missgastosya_bot`.
+2. Envía `/start`.
+3. Toca **Conectar Google**.
+4. Autoriza Google una sola vez.
+5. El Worker crea o reutiliza el único Sheet `Mis gastos` marcado con `mis_gastos=v1`.
+6. Se guarda el vínculo `telegram_user_id → spreadsheet_id` junto con el refresh token de Google cifrado.
 
-Solo lo mínimo para enlazar los sistemas:
+A partir de ahí no hay login repetido para registrar gastos.
 
-- Telegram user/chat id
-- refresh token de Google cifrado
-- spreadsheet id
-- moneda y zona horaria
-- estados temporales de vinculación/confirmación
+## Registro diario desde Telegram
 
-Los movimientos no se guardan en D1.
+El usuario simplemente envía uno de estos tres formatos:
 
-## Configuración
+- texto: `450 en almuerzo en La Loma`;
+- foto de un recibo;
+- audio explicando uno o varios gastos.
 
-Crea una base D1 llamada `mis-gastos`, aplica `schema.sql` y pega su `database_id` en `wrangler.toml`.
+Flujo:
 
-Secrets requeridos:
+`Telegram → Worker → OpenAI → Google Sheets`
 
+- Texto usa OpenAI para estructurar el gasto.
+- Foto usa visión para leer directamente el recibo.
+- Audio usa `gpt-4o-mini-transcribe` y luego el modelo estructurador.
+- Si el resultado es claro, el gasto se guarda automáticamente en el Sheet.
+- Si falta un dato esencial o existe una ambigüedad real, el bot hace una sola pregunta antes de guardar.
+- El bot confirma después de escribir en Google Sheets.
+
+No hay botón obligatorio **Guardar** en el flujo normal.
+
+## Web / perfil
+
+La web y Telegram comparten el mismo Google Sheet.
+
+Cuando la web está abierta con Google conectado:
+
+- relee el Sheet al recuperar foco;
+- relee al volver a la pestaña;
+- refresca cada 60 segundos mientras está visible.
+
+Por eso un gasto enviado desde Telegram aparece también en la página del usuario sin crear una segunda base de datos.
+
+## Datos guardados en D1
+
+D1 no almacena movimientos financieros.
+
+Solo conserva:
+
+- Telegram user/chat id;
+- refresh token de Google cifrado;
+- spreadsheet id;
+- moneda y zona horaria;
+- estados temporales de OAuth y aclaraciones.
+
+Los gastos viven en Google Sheets.
+
+## Secrets requeridos
+
+- `OPENAI_API_KEY`
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET`
 - `GOOGLE_CLIENT_SECRET`
 - `TOKEN_ENCRYPTION_KEY`
 - `SETUP_SECRET`
 
-`TOKEN_ENCRYPTION_KEY` debe ser una clave aleatoria de 32 bytes codificada en base64.
+## OAuth Google
 
-En Google Cloud agrega como redirect URI:
+Redirect URI de producción:
 
-`<PUBLIC_BASE_URL>/oauth/callback`
+`https://mis-gastos.adiazsal.workers.dev/oauth/callback`
 
-Después de desplegar, configura Telegram llamando una vez:
+## Activar webhook
 
-`POST <PUBLIC_BASE_URL>/admin/setup-webhook`
+Una vez configurados los secrets:
 
-con header:
+`POST https://mis-gastos.adiazsal.workers.dev/admin/setup-webhook`
+
+Header:
 
 `X-Setup-Secret: <SETUP_SECRET>`
 
-## Primera versión
+## Pruebas
 
-Telegram soporta texto + aclaración + confirmación + escritura en Sheets. Foto y audio siguen funcionando en la web y se conectarán al backend de Telegram en una siguiente iteración.
+- `tests/media-pipeline.test.mjs`
+- `tests/telegram-flow.test.mjs`
+- `docs/testing-media.md`
+
+Las pruebas de GitHub Actions verifican la arquitectura y regresiones antes de publicar. La cámara, el micrófono y el OAuth reales requieren además una prueba manual en dispositivo.
