@@ -18,7 +18,11 @@
         <h1>¿Qué gastaste?</h1>
         <p class="tagline">Anota. Mira. Sigue.</p>
       </div>
-      <button id="googleButton" class="button secondary compact" type="button" hidden>Conectar Google</button>
+      <div id="googleAccount" class="google-account" hidden>
+        <strong id="googleAccountStatus">Google conectado</strong>
+        <a id="headerSheetLink" href="#" target="_blank" rel="noopener">Abrir mi hoja</a>
+      </div>
+      <button id="googleButton" class="button secondary compact" type="button" hidden>Continuar con Google</button>
     </header>
 
     <section id="modeBanner" class="banner" aria-live="polite"></section>
@@ -77,7 +81,7 @@
           <p class="eyebrow">Este mes</p>
           <h2 id="summary-title">Así va tu mes</h2>
         </div>
-        <a id="sheetLink" class="text-link" href="#" target="_blank" rel="noopener" hidden>Abrir hoja</a>
+        <a id="sheetLink" class="text-link" href="#" target="_blank" rel="noopener" hidden>Abrir mi hoja</a>
       </div>
       <div class="stats">
         <article class="stat">
