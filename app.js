@@ -1136,6 +1136,20 @@ async function init() {
   }
 
   trySilentGoogleReconnect().catch(() => {});
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && state.backend === "google" && state.accessToken) {
+      refresh().catch(() => {});
+    }
+  });
+  window.addEventListener("focus", () => {
+    if (state.backend === "google" && state.accessToken) refresh().catch(() => {});
+  });
+  setInterval(() => {
+    if (document.visibilityState === "visible" && state.backend === "google" && state.accessToken) {
+      refresh().catch(() => {});
+    }
+  }, 60000);
 }
 
 init();
