@@ -6,7 +6,7 @@ compatibility_date = "2026-10-01"
 FRONTEND_URL = "https://antonydis.github.io/mis-gastos/"
 PUBLIC_BASE_URL = "https://mis-gastos.adiazsal.workers.dev"
 GOOGLE_CLIENT_ID = "115193157283-q79sei1assdr1ue415ho1581rlk67k3p.apps.googleusercontent.com"
-DEFAULT_TIMEZONE = "America/Managua"
+DEFAULT_TIMEZONE = "America/Toronto"
 
 [[d1_databases]]
 binding = "DB"
