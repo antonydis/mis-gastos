@@ -1,7 +1,7 @@
 import {googleAuthUrl,exchangeCode,ensureSheet} from './google.js';
 import {createLink,handleUpdate,saveGoogleLink,setupWebhook} from './telegram.js';
 import {randomCode} from './utils.js';
-import {analyzeReceipt,analyzeAudio} from './openai.js';
+import {analyzeReceipt,analyzeAudio,analyzeText} from './openai.js';
 
 function corsHeaders(env,request){
   const origin=request?.headers?.get?.('Origin')||'';
@@ -52,6 +52,16 @@ function mediaProfile(form,env){
   };
 }
 
+async function analyzeTextRequest(request,env){
+  const body=await request.json();
+  const profile={
+    currency:String(body.currency||'NIO').toUpperCase(),
+    timezone:String(body.timezone||env.DEFAULT_TIMEZONE||'America/Managua')
+  };
+  const result=await analyzeText(body.text,profile,env,String(body.source||'Texto'));
+  return json({ok:true,...result},200,env,request);
+}
+
 async function analyzeReceiptRequest(request,env){
   const form=await request.formData();
   const file=form.get('file');
@@ -85,6 +95,7 @@ export default{
     try{
       if(request.method==='OPTIONS')return new Response(null,{status:204,headers:corsHeaders(env,request)});
       if(url.pathname==='/health')return json({ok:true,service:'mis-gastos-api'},200,env,request);
+      if(url.pathname==='/ai/text'&&request.method==='POST')return analyzeTextRequest(request,env);
       if(url.pathname==='/ai/receipt'&&request.method==='POST')return analyzeReceiptRequest(request,env);
       if(url.pathname==='/ai/audio'&&request.method==='POST')return analyzeAudioRequest(request,env);
       if(url.pathname==='/oauth/start'&&request.method==='GET')return oauthStart(url,env);
