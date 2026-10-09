@@ -56,6 +56,9 @@ async function structuredExpenseFromContent(content, profile, env, source) {
     "Usa el contexto, no palabras aisladas.",
     "No inventes montos, comercios, fechas ni métodos de pago.",
     "Comercio y método de pago pueden quedar vacíos.",
+    "Si la moneda está explícita, respétala.",
+    "Si la moneda no está mencionada y no hay conflicto, usa la moneda principal del perfil.",
+    "Si un símbolo o el contexto hace que la moneda sea realmente ambigua (por ejemplo $ puede ser USD o CAD), pregunta cuál es antes de guardar.",
     "Si falta un monto o hay una ambigüedad que impediría guardar correctamente, devuelve una sola pregunta breve en question.",
     source === "Foto"
       ? "La imagen es un recibo. Identifica el TOTAL PAGADO, no subtotal, impuesto, propina sugerida, cambio, saldo previo ni números de autorización. Extrae el comercio y la fecha cuando sean visibles."
