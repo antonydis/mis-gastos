@@ -94,3 +94,16 @@ Header:
 - `docs/testing-media.md`
 
 Las pruebas de GitHub Actions verifican la arquitectura y regresiones antes de publicar. La cámara, el micrófono y el OAuth reales requieren además una prueba manual en dispositivo.
+
+
+## Deshacer y errores
+
+Después de guardar un gasto claro, Telegram muestra **Deshacer** durante 10 minutos. Esa acción elimina las filas recién creadas del Sheet usando sus IDs.
+
+Si OpenAI, Google OAuth o Google Sheets falla antes de completar la escritura, el bot responde explícitamente que **no se guardó nada**.
+
+## Moneda
+
+- Si el mensaje trae moneda explícita, se respeta.
+- Si no trae moneda y no hay conflicto, se usa la moneda principal del perfil.
+- Si el símbolo o contexto es realmente ambiguo, el bot pregunta antes de guardar.
