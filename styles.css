@@ -376,3 +376,28 @@ textarea:focus,select:focus,button:focus-visible,a:focus-visible{
   line-height:1.45;
 }
 .telegram-link .button{width:100%}
+
+.google-account{
+  min-width:180px;
+  padding:10px 12px;
+  border:1px solid var(--ink);
+  background:#fffaf1;
+  text-align:left;
+}
+.google-account strong{
+  display:block;
+  font-size:.84rem;
+  margin-bottom:5px;
+}
+.google-account a{
+  color:var(--green);
+  font-size:.8rem;
+  font-weight:700;
+  text-decoration:none;
+  border-bottom:1px solid currentColor;
+}
+@media(max-width:520px){
+  .google-account{min-width:0;padding:9px 10px}
+  .google-account strong{font-size:.76rem}
+  .google-account a{font-size:.74rem}
+}
