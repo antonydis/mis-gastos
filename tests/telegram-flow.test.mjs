@@ -10,7 +10,7 @@ function has(haystack, needle, label) {
 }
 
 // Vinculación Google desde Telegram.
-has(telegram, "Conecta tu Google una sola vez", "Telegram explica vínculo único");
+has(telegram, "Conecta Google para crear tu hoja personal", "Telegram explica vínculo único");
 has(telegram, "createLink(chat,uid,env)", "Usuario sin vínculo recibe enlace");
 has(telegram, "saveGoogleLink", "OAuth persiste vínculo Telegram-Google");
 has(google, "appProperties has { key='mis_gastos' and value='v1' }", "Google reutiliza el mismo Sheet");
@@ -23,9 +23,9 @@ has(telegram, "analyzeAudio(file", "Audio usa OpenAI transcription + structuring
 has(telegram, "call('getFile'", "Telegram descarga medios con getFile");
 has(telegram, "appendExpenses(link.sheet_id", "Gastos claros se escriben directamente al Sheet");
 has(telegram, "Guardado en Mis gastos", "Bot confirma después de guardar");
-has(telegram, "callback_data:'expense:undo'", "Bot ofrece Deshacer");
+has(telegram, "callback_data:'expense:undo:'", "Bot ofrece Deshacer");
 has(telegram, "deleteExpensesByIds", "Deshacer elimina el gasto del Sheet");
-has(telegram, "no se guardó nada", "Fallo de registro se comunica explícitamente");
+has(telegram, "No pude confirmar el registro", "Fallo de registro se comunica sin afirmar que no hubo escritura");
 
 // Solo se pregunta si el análisis necesita aclaración.
 has(telegram, "if(result.question)", "Ambigüedad abre aclaración");
@@ -38,3 +38,4 @@ has(app, "setInterval", "Perfil refresca periódicamente");
 has(app, "await refresh()", "Perfil relee Google Sheets");
 
 console.log("OK: Telegram link + text/photo/audio + direct Sheet save + profile refresh contracts verified.");
+

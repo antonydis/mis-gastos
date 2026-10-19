@@ -757,10 +757,10 @@ async function createExpenseSheet() {
       valueInputOption:"RAW",
       data:[
         {range:"Movimientos!A1:J1",values:[["ID","Fecha","Descripción","Comercio","Categoría","Monto","Moneda","Método","Fuente","Registrado"]]},
-        {range:"Registro diario!A1:C1",values:[["Fecha","Estado","Registrado"]]},
-        {range:"Categorías!A1:C" + (CATEGORIES.length + 1),values:[["Categoría","Activa","Palabras clave"],...CATEGORIES.map((c) => [c,true,""])]},
-        {range:"Resúmenes!A1:J1",values:[["Periodo","Desde","Hasta","Total","Moneda","Mayor categoría","% mayor categoría","Variación %","Resumen","Generado"]]},
-        {range:"Configuración!A1:B4",values:[["Ajuste","Valor"],["Moneda principal",settings.currency],["Zona horaria",tz],["Versión","1"]]}
+        {range:"'Registro diario'!A1:C1",values:[["Fecha","Estado","Registrado"]]},
+        {range:"'Categorías'!A1:C" + (CATEGORIES.length + 1),values:[["Categoría","Activa","Palabras clave"],...CATEGORIES.map((c) => [c,true,""])]},
+        {range:"'Resúmenes'!A1:J1",values:[["Periodo","Desde","Hasta","Total","Moneda","Mayor categoría","% mayor categoría","Variación %","Resumen","Generado"]]},
+        {range:"'Configuración'!A1:B4",values:[["Ajuste","Valor"],["Moneda principal",settings.currency],["Zona horaria",tz],["Versión","1"]]}
       ]
     })
   });
@@ -777,7 +777,7 @@ async function syncLocalToGoogle() {
   if (!pending.length) return 0;
   const range = encodeURIComponent("Movimientos!A:J");
   await googleFetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${state.sheetId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${state.sheetId}/values/${range}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {method:"POST", body:JSON.stringify({values:pending.map(objectToSheetRow)})}
   );
   localStorage.removeItem(STORAGE_KEY);
@@ -817,7 +817,7 @@ async function appendRows(rows) {
   }
   const range = encodeURIComponent("Movimientos!A:J");
   await googleFetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${state.sheetId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${state.sheetId}/values/${range}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {method:"POST", body:JSON.stringify({values:rows.map(objectToSheetRow)})}
   );
 }
@@ -986,6 +986,7 @@ async function connectGoogle(options = {}) {
     state.tokenClient = google.accounts.oauth2.initTokenClient({
       client_id:CONFIG.googleClientId,
       scope:GOOGLE_SCOPE,
+      error_callback: () => { if (!silent) setStatus("No se abrió la autorización. Permite la ventana de Google e intenta de nuevo."); resolve(false); },
       callback:async (response) => {
         if (response.error) {
           if (!silent) setStatus("No se pudo conectar Google.");
@@ -1001,6 +1002,9 @@ async function connectGoogle(options = {}) {
           resolve(true);
         } catch (err) {
           state.backend = "local";
+          el("googleButton").hidden = false;
+          el("googleAccount").hidden = true;
+          el("modeBanner").textContent = "Google no quedó conectado. Tus gastos locales siguen en este dispositivo.";
           if (!silent) setStatus(err.message || "No pude preparar tu hoja.");
           resolve(false);
         }
@@ -1153,3 +1157,4 @@ async function init() {
 }
 
 init();
+

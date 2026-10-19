@@ -5,7 +5,7 @@ import {analyzeReceipt,analyzeAudio,analyzeText} from './openai.js';
 
 function corsHeaders(env,request){
   const origin=request?.headers?.get?.('Origin')||'';
-  const allowed=(env.FRONTEND_URL||'').replace(/\/$/,'');
+  const allowed=env.FRONTEND_URL ? new URL(env.FRONTEND_URL).origin : '';
   const allow=origin&&allowed&&origin===allowed?origin:allowed;
   return {
     'Access-Control-Allow-Origin':allow||'*',
@@ -77,7 +77,8 @@ async function analyzeAudioRequest(request,env){
 }
 
 async function webhook(request,env,ctx){
-  if(env.TELEGRAM_WEBHOOK_SECRET&&request.headers.get('X-Telegram-Bot-Api-Secret-Token')!==env.TELEGRAM_WEBHOOK_SECRET)return new Response('Forbidden',{status:403});
+  if(!env.TELEGRAM_WEBHOOK_SECRET)return new Response('Webhook not configured',{status:503});
+  if(request.headers.get('X-Telegram-Bot-Api-Secret-Token')!==env.TELEGRAM_WEBHOOK_SECRET)return new Response('Forbidden',{status:403});
   const update=await request.json();
   const id=String(update.update_id??'');
   if(id){
@@ -85,7 +86,7 @@ async function webhook(request,env,ctx){
     if(seen)return json({ok:true});
     await env.DB.prepare('INSERT INTO processed_updates(update_id,processed_at) VALUES(?,?)').bind(id,Date.now()).run();
   }
-  ctx.waitUntil(handleUpdate(update,env));
+  ctx.waitUntil(handleUpdate(update,env).catch(error=>console.error('Telegram update failed',error)));
   return json({ok:true});
 }
 
@@ -95,12 +96,12 @@ export default{
     try{
       if(request.method==='OPTIONS')return new Response(null,{status:204,headers:corsHeaders(env,request)});
       if(url.pathname==='/health')return json({ok:true,service:'mis-gastos-api'},200,env,request);
-      if(url.pathname==='/ai/text'&&request.method==='POST')return analyzeTextRequest(request,env);
-      if(url.pathname==='/ai/receipt'&&request.method==='POST')return analyzeReceiptRequest(request,env);
-      if(url.pathname==='/ai/audio'&&request.method==='POST')return analyzeAudioRequest(request,env);
-      if(url.pathname==='/oauth/start'&&request.method==='GET')return oauthStart(url,env);
-      if(url.pathname==='/oauth/callback'&&request.method==='GET')return oauthCallback(url,env);
-      if(url.pathname==='/telegram/webhook'&&request.method==='POST')return webhook(request,env,ctx);
+      if(url.pathname==='/ai/text'&&request.method==='POST')return await analyzeTextRequest(request,env);
+      if(url.pathname==='/ai/receipt'&&request.method==='POST')return await analyzeReceiptRequest(request,env);
+      if(url.pathname==='/ai/audio'&&request.method==='POST')return await analyzeAudioRequest(request,env);
+      if(url.pathname==='/oauth/start'&&request.method==='GET')return await oauthStart(url,env);
+      if(url.pathname==='/oauth/callback'&&request.method==='GET'){try{return await oauthCallback(url,env);}catch(error){console.error('OAuth callback failed',error);return front(env,{telegram:'error',reason:'google-setup'});}}
+      if(url.pathname==='/telegram/webhook'&&request.method==='POST')return await webhook(request,env,ctx);
       if(url.pathname==='/admin/setup-webhook'&&request.method==='POST'){
         if(!env.SETUP_SECRET||request.headers.get('X-Setup-Secret')!==env.SETUP_SECRET)return json({ok:false,error:'Forbidden'},403);
         const result=await setupWebhook(env);return json({ok:true,result});
@@ -109,3 +110,4 @@ export default{
     }catch(e){console.error(e);return json({ok:false,error:e.message||'Internal error'},500,env,request)}
   }
 };
+

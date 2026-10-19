@@ -33,6 +33,9 @@ jobs:
       - name: Run Telegram flow tests
         run: node tests/telegram-flow.test.mjs
 
+      - name: Run operational tests
+        run: node tests/operational.test.mjs
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
@@ -44,3 +47,4 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+

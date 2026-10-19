@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "scripts": {
     "check": "node --check src/index.js && node --check src/utils.js && node --check src/google.js && node --check src/telegram.js",
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "db:init:remote": "wrangler d1 execute mis-gastos --remote --file=./schema.sql",
+    "dev": "wrangler dev --config ../wrangler.jsonc",
+    "deploy": "wrangler deploy --config ../wrangler.jsonc",
+    "db:init:remote": "wrangler d1 execute mis-gastos --remote --file=./schema.sql --config ../wrangler.jsonc",
     "test": "node ../tests/media-pipeline.test.mjs"
   },
   "devDependencies": {
@@ -14,3 +14,4 @@
   },
   "type": "module"
 }
+
