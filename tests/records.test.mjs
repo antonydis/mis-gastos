@@ -65,9 +65,11 @@ try{
  await handleUpdate(text('Gasté 33 CAD en gasolina'),env);
  assert.equal(appends,1);assert.equal(headers.length,17);assert.deepEqual(rows[0],originalRow);
  assert.equal(rows[1][15],'Por completar');assert.equal(rows[1][16],'método de pago');assert.equal(rows[1][14],33);
- assert.match(messages.at(-1).text,/Fecha: 2026-10-19/);assert.match(messages.at(-1).text,/Vehículo familiar/);
- assert.ok(messages.at(-1).reply_markup.inline_keyboard[1].some(x=>x.text==='Completar después'));
+ assert.match(messages.at(-1).text,/2026-10-19/);assert.equal(rows[1][12],'Vehículo familiar');
+ assert.ok(messages.at(-1).reply_markup.inline_keyboard[1].some(x=>x.text==='Más tarde'));
+ await handleUpdate(text('📥 Varios gastos'),env);assert.match(messages.at(-1).text,/Hasta 25 gastos/);
  const id=rows[1][0];
+ await handleUpdate(callback('expense:details:'+id),env);assert.match(messages.at(-1).text,/Vehículo familiar/);assert.equal(appends,1,'Reading details must not append rows');
  await handleUpdate(callback('expense:later:'+id),env);assert.equal(appends,1);
  await handleUpdate(text('/pendientes'),env);assert.ok(messages.at(-1).reply_markup.inline_keyboard.some(row=>row[0].callback_data==='expense:complete:'+id));
  await handleUpdate(callback('expense:complete:'+id),env);assert.equal(pending.kind,'complete');assert.match(messages.at(-1).text,/método de pago/);
@@ -75,7 +77,7 @@ try{
  assert.equal(appends,1,'Completar must not append duplicate rows');
  assert.equal(rows.length,2);assert.equal(rows[1][7],'Banco Ejemplo Mastercard débito');assert.equal(rows[1][15],'Completo');assert.equal(rows[1][16],'');
  assert.equal(rows[1][0],id);assert.equal(rows[1][5],33);assert.deepEqual(rows[0],originalRow);
- assert.match(messages.at(-1).text,/no agregué filas/);
+ assert.match(messages.at(-1).text,/actualicé los datos/);
  await handleUpdate(text('Compré café sin monto'),env);assert.equal(appends,1);assert.match(messages.at(-1).text,/Cuánto/);
  const foreign=expenseToRow({...analyzed,currency:'GTQ',amount:100,amountCAD:null});assert.equal(foreign[14],'');
  assert.equal(missingDetails(analyzed).length,1);
@@ -91,10 +93,14 @@ try{
  await handleUpdate({message:{from:{id:1},chat:{id:1,type:'private'},document:{file_id:'pdf',mime_type:'application/pdf',file_name:'statement.pdf',file_size:4000}}},env);
  assert.equal(pending.kind,'import');assert.equal(appends,beforeImport+1);
  const cancelAction=messages.at(-1).reply_markup.inline_keyboard[0][1].callback_data;
- await handleUpdate(callback(cancelAction),env);assert.equal(appends,beforeImport+1);assert.match(messages.at(-1).text,/cancelada/);
+ await handleUpdate(callback(cancelAction),env);assert.equal(appends,beforeImport+1);assert.match(messages.at(-1).text,/Cancelado/);
  await handleUpdate(callback('language:en'),env);assert.equal(language,'en');assert.match(messages.at(-1).text,/Language: English/);
  await handleUpdate(text('🧾 Add an expense'),env);assert.match(messages.at(-1).text,/Send an expense/);assert.ok(messages.at(-1).reply_markup.keyboard[0].some(x=>x.text==='🧾 Add an expense'));
  await handleUpdate(text('How much have I spent this month?'),env);assert.match(messages.at(-1).text,/Expenses for/);
+ await handleUpdate(text('📥 Multiple expenses'),env);assert.match(messages.at(-1).text,/Up to 25 expenses/);
+ await handleUpdate(text('📝 Add details'),env);assert.match(messages.at(-1).text,/missing details/);
+ const removedId=rows[1][0];rows.splice(1,1);
+ await handleUpdate(callback('expense:details:'+removedId),env);assert.match(messages.at(-1).text,/no longer in your sheet/);
  assert.equal(link.currency,'CAD');assert.equal(link.timezone,'America/Toronto');
  console.log('OK: rich columns, old rows preserved, optional details, defer, list pending, complete same row, mandatory amount, no invented FX.');
 }finally{globalThis.fetch=originalFetch;}

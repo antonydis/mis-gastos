@@ -21,7 +21,7 @@ async function call(method,payload,env){
 }
 
 const menu={keyboard:[[{text:'🧾 Registrar gasto'},{text:'📥 Importar movimientos'}],[{text:'📊 Este mes'},{text:'🏷 Categorías'}],[{text:'📝 Pendientes'},{text:'📄 Mi hoja'}],[{text:'⚙️ Ajustes'}]],resize_keyboard:true};
-const help='Después de guardar verás todos los datos capturados. Usa /pendientes para completar información más adelante. Envíame un gasto por texto, una foto de un recibo, un PDF (máximo 8 MB) o un audio. Ejemplo: «Ayer gasté 25 CAD en supermercado». Guardo una fila por gasto y pregunto si falta algo esencial. También puedes consultar el mes, las categorías o abrir tu hoja. Usa /moneda CAD, USD, NIO, EUR, GTQ o MXN para elegir tu moneda; /cancelar para cancelar una aclaración; /link para volver a autorizar Google.';
+const help='Envíame un gasto por texto, foto o audio.\nEjemplo: «Ayer pagué 25 en supermercado con mi tarjeta RBC».\nPara varios gastos, envía una imagen o PDF.\nLos botones te permiten ver tus totales, completar datos o abrir tu hoja.';
 export async function send(chatId,text,env,reply_markup=menu){
   text=translateMessage(text,env.BOT_LANGUAGE);reply_markup=translateMarkup(reply_markup,env.BOT_LANGUAGE);
   while(text.length>3800){let at=text.lastIndexOf('\n',3800);if(at<1)at=3800;await call('sendMessage',{chat_id:chatId,text:text.slice(0,at)},env);text=text.slice(at).trimStart();}
@@ -53,9 +53,9 @@ export async function createLink(chatId,userId,env){
   u.searchParams.set('link',code);
   return send(
     chatId,
-    '¡Bienvenido a Mis gastos! Conecta Google para crear tu hoja personal y guardar tus gastos allí. Después podrás enviar texto, fotos o audios y consultar tus totales. Solo accedemos a los archivos de esta aplicación. El enlace vence en 15 minutos; usa /link si necesitas otro.',
+    '¡Hola! Aquí puedes anotar tus gastos por texto, foto o audio.\nConecta Google para guardarlos en tu hoja de gastos.',
     env,
-    {inline_keyboard:[[{text:'Conectar Google',url:u.toString()}]]}
+    {inline_keyboard:[[{text:'Conectar Google',url:u.toString()}],[{text:'Español / English',callback_data:'menu:language'}]]}
   );
 }
 
@@ -106,9 +106,21 @@ export function savedMessage(expenses){
   return 'Guardado en Mis gastos:\n'+lines.join('\n\n');
 }
 
-function recordButtons(ids,expenses){
-  const keyboard=[[{text:'Deshacer',callback_data:'expense:undo:'+ids[0]}]];
-  if(expenses.some(x=>missingDetails(x).length))keyboard.push([{text:'Completar ahora',callback_data:'expense:complete:'+ids[0]},{text:'Completar después',callback_data:'expense:later:'+ids[0]}]);
+export function shortReceipt(expenses){
+  const lines=expenses.map(x=>[
+    x.description+' · '+money(x.amount,x.currency),
+    x.date+' · Categoría: '+x.category,
+    ...(x.paymentMethod?['Pago: '+x.paymentMethod]:[]),
+    ...(x.possibleDuplicate?['⚠ Posible repetido: hay un gasto con la misma fecha, moneda y monto. Revisa tu hoja antes de confirmar.']:[]),
+  ].join('\n'));
+  const missing=[...new Set(expenses.flatMap(missingDetails))];
+  return '✓ Guardado\n'+lines.join('\n\n')+(missing.length?'\nFalta: '+missing.join(', '):'');
+}
+
+function recordButtons(ids,expenses,sheetId){
+  const keyboard=[[{text:'Ver hoja',url:'https://docs.google.com/spreadsheets/d/'+sheetId+'/edit'},{text:'Ver detalles',callback_data:'expense:details:'+ids[0]}]];
+  if(expenses.some(x=>missingDetails(x).length))keyboard.push([{text:'Completar datos',callback_data:'expense:complete:'+ids[0]},{text:'Más tarde',callback_data:'expense:later:'+ids[0]}]);
+  keyboard.push([{text:'Deshacer',callback_data:'expense:undo:'+ids[0]}]);
   return {inline_keyboard:keyboard};
 }
 
@@ -117,12 +129,12 @@ async function completionFromText(uid,chat,text,link,pending,env){
   const access=await refreshAccess(link.google_refresh_token,env);
   const all=await readExpenses(link.sheet_id,access);
   const expenses=ids.map(id=>all.find(x=>x.id===id));
-  if(expenses.some(x=>!x))return send(chat,'Uno de esos gastos ya no existe. Abre Mi hoja para revisarlo.',env);
+  if(expenses.some(x=>!x))return send(chat,'Ese gasto ya no está en tu hoja.',env);
   const result=await analyzeText('Completa solamente los datos complementarios de estos gastos, manteniendo el orden, montos, fechas y descripciones. Datos actuales: '+JSON.stringify(expenses)+'\nInformación adicional del usuario: '+text,profile(link,env),env,'Telegram');
   if(result.question)return send(chat,result.question,env);
   const updated=await completeExpenses(link.sheet_id,ids,result.expenses,access);
   await env.DB.prepare('DELETE FROM pending WHERE telegram_user_id=?').bind(uid).run();
-  return send(chat,'Actualicé los mismos registros; no agregué filas.\n'+savedMessage(updated)+'\nhttps://docs.google.com/spreadsheets/d/'+link.sheet_id+'/edit',env);
+  return send(chat,'Listo, actualicé los datos.\n'+shortReceipt(updated,env.BOT_LANGUAGE).replace('✓ Guardado\n',''),env,{inline_keyboard:[[{text:'Ver hoja',url:'https://docs.google.com/spreadsheets/d/'+link.sheet_id+'/edit'}]]});
 }
 
 async function saveClearExpenses(uid,chat,link,result,env,confirmed=false){
@@ -133,17 +145,17 @@ async function saveClearExpenses(uid,chat,link,result,env,confirmed=false){
     result.expenses=result.expenses.map(x=>({...x,possibleDuplicate:existing.some(old=>old.date===x.date&&old.currency===x.currency&&old.amount===x.amount)}));
     const nonce=randomCode();
     await env.DB.prepare('INSERT INTO pending VALUES(?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,expires_at=excluded.expires_at').bind(uid,'import',JSON.stringify({nonce,result}),Date.now()+PENDING_TTL).run();
-    const preview=savedMessage(result.expenses).replace('Guardado en Mis gastos:','Revisa antes de guardar:');
+    const preview=shortReceipt(result.expenses).replace('✓ Guardado','Revisa antes de guardar:');
     const totals=new Map();for(const x of result.expenses)totals.set(x.currency,(totals.get(x.currency)||0)+x.amount);
-    return send(chat,result.expenses.length+' gastos detectados.\n'+preview+'\nTotal: '+[...totals].map(([currency,total])=>money(total,currency)).join(' + ')+'\n'+(result.excludedCount?'Omitidos: '+result.excludedCount+'. '+(result.reviewNotes||'')+'\n':'')+'Todavía no se guardó nada.',env,{inline_keyboard:[[{text:'Confirmar importación',callback_data:'import:save:'+nonce},{text:'Cancelar',callback_data:'import:cancel:'+nonce}]]});
+    return send(chat,result.expenses.length+' gastos detectados.\n'+preview+'\nTotal: '+[...totals].map(([currency,total])=>money(total,currency)).join(' + ')+'\n'+(result.excludedCount?'Omitidos: '+result.excludedCount+'. '+(result.reviewNotes||'')+'\n':'')+'Todavía no se guardó nada.',env,{inline_keyboard:[[{text:'Guardar gastos',callback_data:'import:save:'+nonce},{text:'Cancelar',callback_data:'import:cancel:'+nonce}]]});
   }
-  if(!result.expenses?.length)return send(chat,'No encontré un gasto claro. Indica qué compraste y cuánto pagaste, o envía un recibo legible.',env);
+  if(!result.expenses?.length)return send(chat,'¿Qué compraste y cuánto pagaste? También puedes enviarme una foto del recibo.',env);
   const access=await refreshAccess(link.google_refresh_token,env);
   const ids=await appendExpenses(link.sheet_id,result.expenses,access);
   await env.DB.prepare(
     'INSERT INTO pending VALUES(?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,expires_at=excluded.expires_at'
   ).bind(uid,'undo',JSON.stringify({ids}),Date.now()+10*60*1000).run();
-  return send(chat,savedMessage(result.expenses)+'\nhttps://docs.google.com/spreadsheets/d/'+link.sheet_id+'/edit'+(result.expenses.some(x=>missingDetails(x).length)?'\n¿Quieres completar los datos pendientes ahora? También puedes dejarlos para después.':''),env,recordButtons(ids,result.expenses));
+  return send(chat,shortReceipt(result.expenses,env.BOT_LANGUAGE),env,recordButtons(ids,result.expenses,link.sheet_id));
 }
 
 async function rememberClarification(uid,context,env){
@@ -190,7 +202,7 @@ async function processPhoto(uid,chat,message,link,env){
   const photos=message.photo||[];
   const best=photos[photos.length-1];
   if(!best?.file_id)throw new Error('No encontré la foto.');
-  await send(chat,'Analizando el recibo…',env);
+  await send(chat,'Leyendo tu foto…',env);
   const file=await mediaStep('file-download',()=>telegramFile(best.file_id,env,'recibo.jpg','image/jpeg'));
   const result=await mediaStep('photo-analysis',()=>analyzeReceipt(file,profile(link,env),env,message.caption||''));
   if(result.question){
@@ -203,7 +215,7 @@ async function processPhoto(uid,chat,message,link,env){
 async function processAudio(uid,chat,message,link,env){
   const media=message.voice||message.audio;
   if(!media?.file_id)throw new Error('No encontré el audio.');
-  await send(chat,'Entendiendo tu audio…',env);
+  await send(chat,'Escuchando tu audio…',env);
   const file=await mediaStep('file-download',()=>telegramFile(media.file_id,env,message.voice?'gasto.ogg':media.file_name||'gasto-audio',media.mime_type||(message.voice?'audio/ogg':'')));
   const result=await mediaStep('audio-analysis',()=>analyzeAudio(file,profile(link,env),env,message.caption||''));
   if(result.question){
@@ -221,25 +233,40 @@ async function processAudio(uid,chat,message,link,env){
 
 async function handleCallback(cb,env){
   await call('answerCallbackQuery',{callback_query_id:cb.id},env).catch(()=>{});
+  if(cb.data?.startsWith('expense:details:')){
+    if(cb.message?.chat?.type&&cb.message.chat.type!=='private')return;
+    const uid=String(cb.from.id),chat=String(cb.message?.chat?.id||cb.from.id);
+    try{
+      const link=await userLink(uid,env);if(!link)return send(chat,'Conecta Google con /link para continuar.',env);
+      const id=cb.data.slice('expense:details:'.length);
+      const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(uid).first();
+      let ids=[id];
+      if(pending?.kind==='undo'){const saved=JSON.parse(pending.payload);if(saved.ids?.[0]===id)ids=saved.ids;}
+      const access=await refreshAccess(link.google_refresh_token,env);
+      const selected=(await readExpenses(link.sheet_id,access)).filter(x=>ids.includes(x.id));
+      if(!selected.length)return send(chat,'Ese gasto ya no está en tu hoja.',env);
+      return send(chat,savedMessage(selected).replace('Guardado en Mis gastos:','Estos son los datos guardados:'),env,{inline_keyboard:[[{text:'Ver hoja',url:'https://docs.google.com/spreadsheets/d/'+link.sheet_id+'/edit'}]]});
+    }catch(error){console.error('Expense details failed',error);return send(chat,'No pude abrir ese gasto. Inténtalo de nuevo; no cambié nada.',env);}
+  }
   if(cb.data?.startsWith('import:')){
     const uid=String(cb.from.id),chat=String(cb.message?.chat?.id||cb.from.id);
     const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(uid).first();
-    if(pending?.kind==='import-saving')return send(chat,'Importación en curso; no pulses Confirmar otra vez.',env);
-    if(!pending||pending.kind!=='import'||Number(pending.expires_at)<=Date.now())return send(chat,'Esta importación venció o ya se confirmó. Envía el archivo otra vez si no lo guardaste.',env);
+    if(pending?.kind==='import-saving')return send(chat,'Estoy guardando tus gastos. Espera un momento.',env);
+    if(!pending||pending.kind!=='import'||Number(pending.expires_at)<=Date.now())return send(chat,'Esta lista ya se guardó o venció. Revisa tu hoja antes de enviarla otra vez.',env);
     const payload=JSON.parse(pending.payload);
     const action=cb.data.split(':')[1],nonce=cb.data.split(':')[2];
-    if(nonce!==payload.nonce)return send(chat,'Esta importación venció o ya se confirmó. Envía el archivo otra vez si no lo guardaste.',env);
+    if(nonce!==payload.nonce)return send(chat,'Esta lista ya se guardó o venció. Revisa tu hoja antes de enviarla otra vez.',env);
     if(action==='cancel'){
       await env.DB.prepare("DELETE FROM pending WHERE telegram_user_id=? AND kind='import' AND payload=?").bind(uid,pending.payload).run();
-      return send(chat,'Importación cancelada. No se guardó ningún gasto.',env);
+      return send(chat,'Cancelado. No guardé esos gastos.',env);
     }
     if(action!=='save')return;
     const lock=await env.DB.prepare("UPDATE pending SET kind='import-saving' WHERE telegram_user_id=? AND kind='import' AND payload=?").bind(uid,pending.payload).run();
-    if(lock.meta?.changes!==1)return send(chat,'Importación en curso; no pulses Confirmar otra vez.',env);
+    if(lock.meta?.changes!==1)return send(chat,'Estoy guardando tus gastos. Espera un momento.',env);
     try{
-      const link=await userLink(uid,env);if(!link)return send(chat,'Conecta Google con /link.',env);
+      const link=await userLink(uid,env);if(!link)return send(chat,'Conecta Google con /link para continuar.',env);
       return await saveClearExpenses(uid,chat,link,payload.result,env,true);
-    }catch(error){console.error('Import save uncertain',error);return send(chat,'No pude confirmar la importación. Revisa tu hoja antes de volver a enviarla.',env);}
+    }catch(error){console.error('Import save uncertain',error);return send(chat,'No pude confirmar si se guardaron. Revisa tu hoja antes de volver a enviarlos.',env);}
   }
   if(cb.data?.startsWith('language:')){
     const language=cb.data.slice(9);
@@ -256,18 +283,18 @@ async function handleCallback(cb,env){
     const currency=cb.data.slice(9);
     if(!['CAD','USD','NIO','EUR','GTQ','MXN'].includes(currency))return;
     await env.DB.prepare('UPDATE user_links SET currency=? WHERE telegram_user_id=?').bind(currency,String(cb.from.id)).run();
-    return send(String(cb.from.id),'Moneda principal: '+currency+'. Si mencionas otra moneda en un gasto, la respetaré.',env);
+    return send(String(cb.from.id),'Moneda principal: '+currency+'. Si un gasto está en otra moneda, indícala al enviarlo.',env);
   }
   if(cb.data?.startsWith('expense:complete:')||cb.data?.startsWith('expense:later:')){
     const uid=String(cb.from.id),chat=String(cb.message?.chat?.id||cb.from.id);
     if(cb.message?.chat?.type&&cb.message.chat.type!=='private')return;
     if(cb.data.startsWith('expense:later:')){
       await env.DB.prepare("DELETE FROM pending WHERE telegram_user_id=? AND kind='complete'").bind(uid).run();
-      return send(chat,'Quedó guardado con los datos disponibles. Cuando quieras, envía /pendientes o completa los campos en Mi hoja.',env);
+      return send(chat,'Listo, quedó guardado. Puedes retomarlo en Completar datos cuando quieras.',env);
     }
     try{
       const link=await userLink(uid,env);
-      if(!link)return send(chat,'Conecta Google con /link.',env);
+      if(!link)return send(chat,'Conecta Google con /link para continuar.',env);
       const id=cb.data.slice('expense:complete:'.length);
       const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(uid).first();
       let ids=[id];
@@ -278,28 +305,28 @@ async function handleCallback(cb,env){
       if(selected.some(x=>!x))return send(chat,'Ese gasto ya no está en tu hoja.',env);
       await env.DB.prepare('INSERT INTO pending VALUES(?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,expires_at=excluded.expires_at').bind(uid,'complete',JSON.stringify({ids}),Date.now()+PENDING_TTL).run();
       const missing=[...new Set(selected.flatMap(missingDetails))];
-      return send(chat,'¿Cómo quieres completar '+(selected.length===1?'«'+selected[0].description+'»':selected.length+' gastos')+'? Falta: '+(missing.join(', ')||'puedes agregar notas o viaje/proyecto')+'. Ejemplo: «RBC crédito, gasto único y variable». Puedes responder por texto o enviar /cancelar.',env);
-    }catch(error){console.error('Completion setup failed',error);return send(chat,'No pude abrir ese gasto para completarlo. No hice cambios.',env);}
+      return send(chat,'Falta: '+(missing.join(', ')||'puedes agregar notas o viaje/proyecto')+'.\nEscribe los datos. Ejemplo: «RBC crédito, único y variable».\nPara dejarlo para después, envía /cancelar.',env);
+    }catch(error){console.error('Completion setup failed',error);return send(chat,'No pude abrir ese gasto. Inténtalo de nuevo; no cambié nada.',env);}
   }
   if(!cb.data?.startsWith('expense:undo:'))return;
   const uid=String(cb.from.id);
   const chat=String(cb.message?.chat?.id||cb.from.id);
   const link=await userLink(uid,env);
-  if(!link)return send(chat,'Tu Google ya no está conectado. Usa /link para volver a conectarlo.',env);
+  if(!link)return send(chat,'Conecta Google otra vez con /link para continuar.',env);
   const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(uid).first();
   if(!pending||pending.kind!=='undo'||Number(pending.expires_at)<=Date.now()){
-    return send(chat,'Ese gasto ya no se puede deshacer desde aquí.',env);
+    return send(chat,'Ya no puedo deshacerlo desde aquí. Puedes borrarlo en tu hoja.',env);
   }
   try{
     const payload=JSON.parse(pending.payload||'{}');
-    if(cb.data!=='expense:undo:'+payload.ids?.[0])return send(chat,'Ese botón corresponde a otro gasto. Usa el botón del último registro.',env);
+    if(cb.data!=='expense:undo:'+payload.ids?.[0])return send(chat,'Usa Deshacer en el último gasto que guardaste.',env);
     const access=await refreshAccess(link.google_refresh_token,env);
     const removed=await deleteExpensesByIds(link.sheet_id,payload.ids||[],access);
     await env.DB.prepare('DELETE FROM pending WHERE telegram_user_id=?').bind(uid).run();
-    return send(chat,removed?'Listo. Quité ese gasto de Mis gastos.':'No encontré ese gasto en la hoja. No hice cambios.',env);
+    return send(chat,removed?'Listo, borré ese gasto.':'Ese gasto ya no está en tu hoja. No cambié nada.',env);
   }catch(e){
     console.error('Telegram undo error',e);
-    return send(chat,'No pude quitar ese gasto. No hice ningún cambio adicional.',env);
+    return send(chat,'No pude borrarlo. Revisa tu hoja antes de intentarlo otra vez.',env);
   }
 }
 
@@ -315,13 +342,13 @@ export async function handleUpdate(update,env){
   const uid=String(m.from.id);
   const chat=String(m.chat.id);
   const text=normalizeMenu(String(m.text||m.caption||'').trim());
-  if(text==='🌐 Idioma / Language'||/^\/(idioma|language)\b/i.test(text))return send(chat,'Elige tu idioma. Choose your language.',env,{inline_keyboard:[[{text:'Español',callback_data:'language:es'},{text:'English',callback_data:'language:en'}]]});
+  if(text==='🌐 Idioma / Language'||/^\/(idioma|language)\b/i.test(text))return send(chat,'¿En qué idioma prefieres hablar? / Choose your language.',env,{inline_keyboard:[[{text:'Español',callback_data:'language:es'},{text:'English',callback_data:'language:en'}]]});
   if(/^\/link\b/i.test(text))return createLink(chat,uid,env);
   let link;
-  try{link=await userLink(uid,env);}catch(error){console.error('User link failed',error);return send(chat,'No pude abrir tu conexión con Google. Usa /link para volver a conectarte.',env);}
+  try{link=await userLink(uid,env);}catch(error){console.error('User link failed',error);return send(chat,'Necesito que conectes Google otra vez. Envía /link para continuar.',env);}
   if(/^\/start\b/i.test(text)){
     return link
-      ? send(chat,'¡Bienvenido a Mis gastos! Tu Google está conectado. '+help,env)
+      ? send(chat,'¡Hola! Cuéntame qué gastaste o envíame una foto o un audio.',env)
       : createLink(chat,uid,env);
   }
 
@@ -330,12 +357,12 @@ export async function handleUpdate(update,env){
   if (/^\/(help|ayuda)\b/i.test(text)||text==='❓ Ayuda')return send(chat,help,env);
   if (/^\/cancelar\b/i.test(text)){
     await env.DB.prepare('DELETE FROM pending WHERE telegram_user_id=? AND kind IN (?,?,?)').bind(uid,'clarify','complete','import').run();
-    return send(chat,'Aclaración cancelada. Los gastos ya guardados se conservan; puedes enviar otro gasto.',env);
+    return send(chat,'Listo, cancelado. Tus gastos guardados siguen en la hoja.',env);
   }
-  if(text==='🧾 Registrar gasto')return send(chat,'Envía el gasto por texto, foto o audio. Por ejemplo: «Ayer gasté 25 CAD en supermercado, con tarjeta RBC».',env);
-  if(text==='📥 Importar movimientos')return send(chat,'Envía una imagen o PDF de hasta 8 MB, con un máximo de 25 gastos. Revisarás la lista antes de guardar. No se importan ingresos, pagos de tarjeta, transferencias ni saldos.',env);
+  if(text==='🧾 Registrar gasto')return send(chat,'¿Qué gastaste?\nEjemplo: «Pagué 25 en supermercado con mi tarjeta RBC».\nTambién puedes enviar una foto o un audio.',env);
+  if(text==='📥 Importar movimientos')return send(chat,'Envía una imagen o PDF con tus gastos. Te mostraré la lista antes de guardarla.\nHasta 25 gastos por envío.',env);
   if(text==='⚙️ Ajustes')return send(chat,'¿Qué quieres ajustar?',env,{inline_keyboard:[[{text:'💱 Moneda',callback_data:'menu:currency'},{text:'🌐 Idioma / Language',callback_data:'menu:language'}],[{text:'❓ Ayuda',callback_data:'menu:help'}]]});
-  if(text==='💱 Moneda')return send(chat,'Moneda actual: '+link.currency+'. Elige la moneda que usaré cuando no menciones ninguna:',env,{inline_keyboard:[['CAD','USD','NIO','EUR','GTQ','MXN'].map(currency=>({text:currency,callback_data:'currency:'+currency}))]});
+  if(text==='💱 Moneda')return send(chat,'Moneda actual: '+link.currency+'. ¿Cuál prefieres usar?',env,{inline_keyboard:[['CAD','USD','NIO','EUR','GTQ','MXN'].map(currency=>({text:currency,callback_data:'currency:'+currency}))]});
   if (/^\/moneda\b/i.test(text)){
     const currency=text.split(/\s+/)[1]?.toUpperCase();
     if(!['CAD','USD','NIO','EUR','GTQ','MXN'].includes(currency))return send(chat,'Usa /moneda CAD, USD, NIO, EUR, GTQ o MXN.',env);
@@ -346,34 +373,34 @@ export async function handleUpdate(update,env){
   const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(uid).first();
   if(pending&&['undo','complete'].includes(pending.kind)&&/^(despues|completar despues|mas tarde|luego)$/i.test(text.normalize('NFD').replace(/[\u0300-\u036f]/g,''))){
     await env.DB.prepare("DELETE FROM pending WHERE telegram_user_id=? AND kind='complete'").bind(uid).run();
-    return send(chat,'Quedó guardado. Puedes retomarlo con /pendientes cuando quieras.',env);
+    return send(chat,'Listo, quedó guardado. Puedes retomarlo en Completar datos cuando quieras.',env);
   }
-  if(pending?.kind==='complete'&&Number(pending.expires_at)>Date.now()&&!m.text)return send(chat,'Para completar ese registro, responde por texto. Usa /cancelar si quieres registrar otro gasto por foto o audio.',env);
+  if(pending?.kind==='complete'&&Number(pending.expires_at)>Date.now()&&!m.text)return send(chat,'Escribe los datos que faltan. Para dejarlo y anotar otro gasto, envía /cancelar.',env);
   if(pending?.kind==='complete'&&Number(pending.expires_at)>Date.now()&&isReply){
-    try{return await completionFromText(uid,chat,text,link,pending,env);}catch(error){console.error('Completion failed',error);return send(chat,'No pude confirmar la actualización. Revisa tu hoja; no reenvíes el gasto como nuevo.',env);}
+    try{return await completionFromText(uid,chat,text,link,pending,env);}catch(error){console.error('Completion failed',error);return send(chat,'No pude confirmar el cambio. Revisa tu hoja antes de intentarlo otra vez.',env);}
   }
-  if(pending?.kind==='import'&&!text.startsWith('/')&&!['📊 Este mes','🏷 Categorías','📄 Mi hoja','📝 Pendientes'].includes(text))return send(chat,'La lista quedó pendiente de confirmar. Usa los botones Confirmar importación o Cancelar.',env);
+  if(pending?.kind==='import'&&!text.startsWith('/')&&!['📊 Este mes','🏷 Categorías','📄 Mi hoja','📝 Pendientes'].includes(text))return send(chat,'Primero elige Guardar gastos o Cancelar en la lista anterior.',env);
   if(pending&&pending.kind==='clarify'&&Number(pending.expires_at)>Date.now()&&isReply){
-    try{return await handleClarification(uid,chat,text,link,pending,env);}catch(error){console.error('Clarification failed',error);return send(chat,'No pude completar el registro. Revisa tu hoja antes de reenviarlo o usa /link para reconectar Google.',env);}
+    try{return await handleClarification(uid,chat,text,link,pending,env);}catch(error){console.error('Clarification failed',error);return send(chat,'No pude terminar de guardarlo. Revisa tu hoja antes de enviarlo otra vez.',env);}
   }
   if(/^\/pendientes\b/i.test(text)||text==='📝 Pendientes'){
     try{
       const access=await refreshAccess(link.google_refresh_token,env);
       const rows=(await readExpenses(link.sheet_id,access)).filter(x=>missingDetails(x).length);
-      if(!rows.length)return send(chat,'No tienes gastos con datos pendientes.',env);
+      if(!rows.length)return send(chat,'¡Todo al día! No hay datos por completar.',env);
       const selected=rows.slice(-8).reverse();
-      return send(chat,'Hay '+rows.length+' gastos con datos por completar. Elige uno de los últimos '+selected.length+':',env,{inline_keyboard:selected.map(x=>[{text:(x.date+' · '+x.description+' · '+money(x.amount,x.currency)).slice(0,60),callback_data:'expense:complete:'+x.id}])});
-    }catch(error){console.error('Pending details failed',error);return send(chat,'No pude consultar los pendientes. Intenta otra vez.',env);}
+      return send(chat,'Hay '+rows.length+' gastos con datos por completar. ¿Cuál quieres completar?',env,{inline_keyboard:selected.map(x=>[{text:(x.date+' · '+x.description+' · '+money(x.amount,x.currency)).slice(0,60),callback_data:'expense:complete:'+x.id}])});
+    }catch(error){console.error('Pending details failed',error);return send(chat,'No pude abrir la lista. Inténtalo de nuevo.',env);}
   }
   const kind=m.text?queryKind(text):'';
   if(kind){
-    if(kind==='unsupported')return send(chat,'Por ahora puedo resumir este mes y sus categorías. Usa los botones Este mes o Categorías.',env);
+    if(kind==='unsupported')return send(chat,'Por ahora puedo mostrarte este mes. Elige Este mes o Por categoría.',env);
     if(kind==='sheet')return send(chat,'Tu hoja: https://docs.google.com/spreadsheets/d/'+link.sheet_id+'/edit',env);
     try{
       const access=await refreshAccess(link.google_refresh_token,env);
       const rows=await readExpenses(link.sheet_id,access);
       return send(chat,monthlySummary(rows,profile(link,env).timezone,kind),env);
-    }catch(error){console.error('Summary failed',error);return send(chat,'No pude consultar tu hoja. Intenta de nuevo o usa /link para reconectar Google.',env);}
+    }catch(error){console.error('Summary failed',error);return send(chat,'No pude abrir tu hoja. Inténtalo de nuevo en un momento.',env);}
   }
   if(text.startsWith('/'))return send(chat,help,env);
 
@@ -382,8 +409,8 @@ export async function handleUpdate(update,env){
   try{
     if(m.document){
       const type=m.document.mime_type||'';
-      if(type!=='application/pdf'&&!type.startsWith('image/'))return send(chat,'Envíame una foto o un PDF de hasta 8 MB. Los archivos Excel todavía no se importan.',env);
-      if(m.document.file_size>8*1024*1024)return send(chat,'El archivo supera 8 MB. Divídelo en archivos más pequeños.',env);
+      if(type!=='application/pdf'&&!type.startsWith('image/'))return send(chat,'Por ahora puedo leer fotos y PDFs. Envíame uno de esos archivos.',env);
+      if(m.document.file_size>8*1024*1024)return send(chat,'El archivo es muy grande. Envía una página o una foto de cada parte.',env);
       const raw=await mediaStep('file-download',()=>telegramFile(m.document.file_id,env,m.document.file_name||'gastos.pdf',type));
       const file=new File([raw],raw.name,{type});
       const result=await mediaStep('document-analysis',()=>analyzeDocument(file,profile(link,env),env,m.caption||''));
@@ -399,9 +426,10 @@ export async function handleUpdate(update,env){
     return send(chat,'Envíame un gasto por texto, una foto del recibo o un audio.',env);
   }catch(e){
     console.error('Telegram expense error',e);
-    if(e.message?.includes('25 gastos'))return send(chat,'La importación es demasiado larga. Divide el documento en secciones de hasta 25 gastos.',env);
-    if(['file-download','photo-analysis','audio-transcription','audio-analysis','document-analysis'].includes(e.mediaStage))return send(chat,'No pude procesar el archivo; no llegué a guardarlo. Código: '+e.mediaStage+'. Tu conexión con Google sigue configurada.',env);
-    return send(chat,'No pude confirmar el registro. Revisa tu hoja antes de reenviarlo para evitar duplicados. Si el problema continúa, usa /link para reconectar Google.',env);
+    if(e.message?.includes('25 gastos'))return send(chat,'Hay demasiados gastos en este archivo. Envíalos en grupos de hasta 25.',env);
+    const mediaMessages={'file-download':'No pude abrir el archivo. Vuelve a enviarlo.','photo-analysis':'No pude leer esa foto. Prueba otra o escribe el gasto.','audio-transcription':'No pude entender ese audio. Prueba con otro o escribe el gasto.','audio-analysis':'No pude identificar el gasto en ese audio. Dime qué compraste y cuánto pagaste.','document-analysis':'No pude leer ese PDF. Prueba con una página o con fotos.'};
+    if(mediaMessages[e.mediaStage])return send(chat,mediaMessages[e.mediaStage],env);
+    return send(chat,'No pude confirmar si se guardó. Revisa tu hoja antes de enviarlo otra vez.',env);
   }
 }
 
@@ -418,6 +446,6 @@ export async function saveGoogleLink(link,refreshToken,sheetId,env){
     env.DEFAULT_TIMEZONE||'America/Toronto',
     Date.now()
   ).run();
-  await send(link.chat_id,'Listo. Tu Google quedó conectado. Desde ahora solo envíame cada gasto por texto, foto o audio y se guardará automáticamente en Mis gastos. Moneda inicial: CAD. Puedes cambiarla con el botón Moneda. '+help,env).catch(error=>console.error('Link notification failed',error));
+  await send(link.chat_id,'¡Ya estás conectado! Envíame tu primer gasto por texto, foto o audio.',env).catch(error=>console.error('Link notification failed',error));
 }
 

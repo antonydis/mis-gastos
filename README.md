@@ -19,10 +19,11 @@ Bot: https://t.me/missgastosya_bot
 2. Enviar texto, una foto de un recibo o un audio, sin comandos especiales.
 3. El bot pregunta si falta un monto o una descripción que permita identificar el gasto.
 4. Un gasto individual claro se guarda y se confirma con todos los campos capturados y un enlace a la hoja.
-5. Los datos complementarios pueden quedar pendientes: Completar ahora / Completar después.
-6. Pendientes permite retomar un registro; completar modifica la misma fila sin duplicarla. La respuesta para completar datos es por texto.
+5. La confirmación muestra monto, fecha, categoría y pago si está disponible. Ver detalles abre la información completa desde la hoja; Ver hoja abre el documento.
+6. Los datos complementarios pueden quedar pendientes: Completar datos / Más tarde.
+7. Completar datos permite retomar un registro; completar modifica la misma fila sin duplicarla. La respuesta para completar datos es por texto.
 
-Menú principal: Registrar gasto, Importar movimientos, Este mes, Categorías, Pendientes, Mi hoja y Ajustes. Moneda, idioma y ayuda están en Ajustes. También funcionan `/pendientes`, `/idioma`, `/moneda`, `/cancelar` y `/link`.
+Menú principal: Registrar gasto, Varios gastos, Este mes, Por categoría, Completar datos, Ver mi hoja y Ajustes. Moneda, idioma y ayuda están en Ajustes. También funcionan `/pendientes`, `/idioma`, `/moneda`, `/cancelar` y `/link`.
 
 ## Importar varios movimientos
 

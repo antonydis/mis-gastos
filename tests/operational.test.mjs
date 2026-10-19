@@ -52,14 +52,14 @@ globalThis.fetch=async(url,options)=>{
  throw Error('Unexpected request '+url);
 };
 const update=text=>({message:{from:{id:1},chat:{id:1,type:'private'},text}});
-await handleUpdate(update('/start'),env);assert.ok(messages.at(-1).reply_markup.keyboard);assert.match(messages.at(-1).text,/moneda/);
+await handleUpdate(update('/start'),env);assert.ok(messages.at(-1).reply_markup.keyboard);assert.match(messages.at(-1).text,/gastaste/);
 await handleUpdate(update('📊 Este mes'),env);assert.match(messages.at(-1).text,/Gastos de/);
 await handleUpdate(update('📄 Mi hoja'),env);assert.match(messages.at(-1).text,/my-sheet/);
 await handleUpdate(update('/moneda USD'),env);assert.ok(writes.some(x=>x.sql.includes('UPDATE user_links')&&x.args[0]==='USD'));
-await handleUpdate(update('Gasté 5 CAD en café'),{...env,OPENAI_API_KEY:'test'});assert.match(messages.at(-1).text,/Guardado/);assert.match(messages.at(-1).text,/my-sheet/);assert.ok(messages.at(-1).reply_markup.inline_keyboard[0][0].callback_data.startsWith('expense:undo:'));
+await handleUpdate(update('Gasté 5 CAD en café'),{...env,OPENAI_API_KEY:'test'});assert.match(messages.at(-1).text,/Guardado/);assert.match(messages.at(-1).reply_markup.inline_keyboard[0][0].url,/my-sheet/);assert.ok(messages.at(-1).reply_markup.inline_keyboard.flat().some(x=>x.callback_data?.startsWith('expense:undo:')));
 await handleUpdate(update('/link'),env);assert.match(messages.at(-1).reply_markup.inline_keyboard[0][0].url,/link=/);
 await handleUpdate({...update(''),message:{...update('').message,voice:{file_id:'audio'}}},env);
-assert.match(messages.at(-1).text,/Código: file-download/);
+assert.match(messages.at(-1).text,/No pude abrir el archivo/);
 const directPage=await worker.fetch(new Request('https://api.test/connection/result?telegram=error&reason=google-encryption'),env,{});
 assert.equal(directPage.headers.get('Cache-Control'),'no-store');
 assert.match(await directPage.text(),/Código: <strong>google-encryption/);

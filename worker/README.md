@@ -30,6 +30,8 @@ Para instalar el webhook y el menú de comandos: POST `/admin/setup-webhook` con
 
 D1 almacena vínculos, preferencias y estados temporales. No almacena un historial permanente de movimientos. Los lotes pendientes vencen en 30 minutos; un cron horario elimina los estados vencidos. Los gastos confirmados viven en Sheets.
 
-Los comandos `/link`, `/cancelar`, `/pendientes`, `/idioma` y `/moneda` complementan el menú. Para completar un gasto guardado, el usuario responde por texto después de elegirlo en Pendientes.
+Los comandos `/link`, `/cancelar`, `/pendientes`, `/idioma` y `/moneda` complementan el menú. Para completar un gasto guardado, el usuario responde por texto después de elegirlo en Completar datos.
 
 Ver [README principal](../README.md) y [puesta en marcha](../docs/operational-checklist.md).
+
+Los mensajes de Telegram son breves en español e inglés. La confirmación resume el gasto y ofrece Ver hoja, Ver detalles, Completar datos, Más tarde y Deshacer según corresponda. Ver detalles vuelve a leer el Sheet; no conserva una copia de los gastos. Los botones antiguos del menú siguen funcionando.
