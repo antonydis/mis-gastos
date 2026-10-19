@@ -9,7 +9,7 @@ if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const originalFetch=globalThis.fetch;
 const quiet=console.error;console.error=()=>{};
 const key=btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
-const env={FRONTEND_URL:'https://antonydis.github.io/mis-gastos/',DEFAULT_TIMEZONE:'America/Toronto',TOKEN_ENCRYPTION_KEY:key};
+const env={PUBLIC_BASE_URL:'https://api.test',FRONTEND_URL:'https://antonydis.github.io/mis-gastos/',DEFAULT_TIMEZONE:'America/Toronto',TOKEN_ENCRYPTION_KEY:key};
 const date=new Date('2026-11-01T02:00:00Z'); // still October in Toronto
 const rows=[{date:'2026-10-12',amount:10,currency:'CAD',category:'Casa'},{date:'2026-10-13',amount:20,currency:'CAD',category:'Comida'},{date:'2026-10-14',amount:7,currency:'USD',category:'Viajes'},{date:'2026-09-01',amount:999,currency:'CAD',category:'Casa'}];
 const summary=monthlySummary(rows,'America/Toronto','categories',date);
@@ -60,6 +60,11 @@ await handleUpdate(update('Gasté 5 CAD en café'),{...env,OPENAI_API_KEY:'test'
 await handleUpdate(update('/link'),env);assert.match(messages.at(-1).reply_markup.inline_keyboard[0][0].url,/link=/);
 await handleUpdate({...update(''),message:{...update('').message,voice:{file_id:'audio'}}},env);
 assert.match(messages.at(-1).text,/No pude confirmar/);
+const directPage=await worker.fetch(new Request('https://api.test/connection/result?telegram=error&reason=google-encryption'),env,{});
+assert.equal(directPage.headers.get('Cache-Control'),'no-store');
+assert.match(await directPage.text(),/Código: <strong>google-encryption/);
+const configCheck=await worker.fetch(new Request('https://api.test/connection/check'),env,{});
+assert.equal((await configCheck.json()).reason,'missing-google-secret');
 // OAuth failures produce specific, safe diagnostics instead of one generic screen.
 const oauthEnv={...env,GOOGLE_CLIENT_SECRET:'test-secret',PUBLIC_BASE_URL:'https://api.test',DB:{
   prepare(sql){return{bind(){return{first:async()=>sql.includes('oauth_states')?{link_code:'test-link',expires_at:Date.now()+60000}:{code:'test-link',expires_at:Date.now()+60000,used:0},run:async()=>({})};}};},

@@ -44,7 +44,7 @@ export async function createLink(chatId,userId,env){
   const code=randomCode();
   await env.DB.prepare('INSERT INTO link_codes(code,telegram_user_id,chat_id,expires_at,used) VALUES(?,?,?,?,0)')
     .bind(code,userId,chatId,Date.now()+LINK_TTL).run();
-  const u=new URL(env.FRONTEND_URL);
+  const u=new URL('/oauth/start',env.PUBLIC_BASE_URL);
   u.searchParams.set('link',code);
   return send(
     chatId,

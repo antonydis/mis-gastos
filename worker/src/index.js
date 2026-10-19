@@ -1,3 +1,4 @@
+import {connectionIssue,connectionPage} from './connection.js';
 import {googleAuthUrl,exchangeCode,ensureSheet} from './google.js';
 import {createLink,handleUpdate,saveGoogleLink,setupWebhook} from './telegram.js';
 import {randomCode,encrypt} from './utils.js';
@@ -15,13 +16,15 @@ function corsHeaders(env,request){
   };
 }
 function json(data,status=200,env,request){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8',...(env&&request?corsHeaders(env,request):{})}})}
-function front(env,params){const u=new URL(env.FRONTEND_URL);for(const [k,v] of Object.entries(params))u.searchParams.set(k,v);return Response.redirect(u.toString(),302)}
+function front(env,params){const u=new URL('/connection/result',env.PUBLIC_BASE_URL);for(const [k,v] of Object.entries(params))u.searchParams.set(k,v);return Response.redirect(u.toString(),302)}
 
 async function oauthStart(url,env){
   const code=url.searchParams.get('link');
   if(!code)return front(env,{telegram:'error',reason:'missing-link'});
   const link=await env.DB.prepare('SELECT * FROM link_codes WHERE code=?').bind(code).first();
   if(!link||link.used||Number(link.expires_at)<=Date.now())return front(env,{telegram:'error',reason:'expired-link'});
+  const issue=await connectionIssue(env);
+  if(issue)return front(env,{telegram:'error',reason:issue});
   const state=randomCode();
   await env.DB.prepare('INSERT INTO oauth_states(state,link_code,expires_at) VALUES(?,?,?)').bind(state,code,Date.now()+15*60*1000).run();
   return Response.redirect(googleAuthUrl(env,state),302);
@@ -112,6 +115,8 @@ export default{
     const url=new URL(request.url);
     try{
       if(request.method==='OPTIONS')return new Response(null,{status:204,headers:corsHeaders(env,request)});
+      if(url.pathname==='/connection/result')return connectionPage(url);
+      if(url.pathname==='/connection/check'){const reason=await connectionIssue(env);return json({ok:!reason,...(reason?{reason}:{})});}
       if(url.pathname==='/health')return json({ok:true,service:'mis-gastos-api'},200,env,request);
       if(url.pathname==='/ai/text'&&request.method==='POST')return await analyzeTextRequest(request,env);
       if(url.pathname==='/ai/receipt'&&request.method==='POST')return await analyzeReceiptRequest(request,env);
