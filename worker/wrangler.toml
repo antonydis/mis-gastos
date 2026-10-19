@@ -1,4 +1,5 @@
-name = "mis-gastos-api"
+# Legacy configuration; production uses ../wrangler.jsonc.
+name = "mis-gastos"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
@@ -12,3 +13,4 @@ DEFAULT_TIMEZONE = "America/Toronto"
 binding = "DB"
 database_name = "mis-gastos"
 database_id = "dec384c0-85c5-4e78-a81b-4c51a244070d"
+

@@ -1,3 +1,4 @@
+import {preferences} from './preferences.js';
 import {connectionIssue,connectionPage} from './connection.js';
 import {googleAuthUrl,exchangeCode,ensureSheet} from './google.js';
 import {createLink,handleUpdate,saveGoogleLink,setupWebhook} from './telegram.js';
@@ -16,13 +17,14 @@ function corsHeaders(env,request){
   };
 }
 function json(data,status=200,env,request){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8',...(env&&request?corsHeaders(env,request):{})}})}
-function front(env,params){const u=new URL('/connection/result',env.PUBLIC_BASE_URL);for(const [k,v] of Object.entries(params))u.searchParams.set(k,v);return Response.redirect(u.toString(),302)}
+function front(env,params){const u=new URL('/connection/result',env.PUBLIC_BASE_URL);u.searchParams.set('lang',env.BOT_LANGUAGE||'es');for(const [k,v] of Object.entries(params))u.searchParams.set(k,v);return Response.redirect(u.toString(),302)}
 
 async function oauthStart(url,env){
   const code=url.searchParams.get('link');
   if(!code)return front(env,{telegram:'error',reason:'missing-link'});
   const link=await env.DB.prepare('SELECT * FROM link_codes WHERE code=?').bind(code).first();
   if(!link||link.used||Number(link.expires_at)<=Date.now())return front(env,{telegram:'error',reason:'expired-link'});
+  env={...env,BOT_LANGUAGE:(await preferences(link.telegram_user_id,env)).language};
   const issue=await connectionIssue(env);
   if(issue)return front(env,{telegram:'error',reason:issue});
   const state=randomCode();
@@ -37,6 +39,7 @@ async function oauthCallback(url,env){
   if(!st||Number(st.expires_at)<=Date.now())return front(env,{telegram:'error',reason:'expired-state'});
   const link=await env.DB.prepare('SELECT * FROM link_codes WHERE code=?').bind(st.link_code).first();
   if(!link||link.used||Number(link.expires_at)<=Date.now())return front(env,{telegram:'error',reason:'expired-link'});
+  env={...env,BOT_LANGUAGE:(await preferences(link.telegram_user_id,env)).language};
   let stage='configuration';
   try{
   if(!env.GOOGLE_CLIENT_SECRET)return front(env,{telegram:'error',reason:'missing-google-secret'});
@@ -67,16 +70,17 @@ async function oauthCallback(url,env){
 
 function mediaProfile(form,env){
   return {
-    currency:String(form.get('currency')||'NIO').toUpperCase(),
-    timezone:String(form.get('timezone')||env.DEFAULT_TIMEZONE||'America/Managua')
+    currency:String(form.get('currency')||'CAD').toUpperCase(),
+    timezone:String(form.get('timezone')||env.DEFAULT_TIMEZONE||'America/Toronto')
   };
 }
 
 async function analyzeTextRequest(request,env){
   const body=await request.json();
   const profile={
-    currency:String(body.currency||'NIO').toUpperCase(),
-    timezone:String(body.timezone||env.DEFAULT_TIMEZONE||'America/Managua')
+    currency:String(body.currency||'CAD').toUpperCase(),
+    timezone:String(body.timezone||env.DEFAULT_TIMEZONE||'America/Toronto'),
+    language:body.language==='en'?'en':'es'
   };
   const result=await analyzeText(body.text,profile,env,String(body.source||'Texto'));
   return json({ok:true,...result},200,env,request);
@@ -106,11 +110,22 @@ async function webhook(request,env,ctx){
     if(seen)return json({ok:true});
     await env.DB.prepare('INSERT INTO processed_updates(update_id,processed_at) VALUES(?,?)').bind(id,Date.now()).run();
   }
-  ctx.waitUntil(handleUpdate(update,env).catch(error=>console.error('Telegram update failed',error)));
+  const processing=handleUpdate(update,env).catch(error=>console.error('Telegram update failed',error));
+  ctx.waitUntil(processing);
+  await processing;
   return json({ok:true});
 }
 
 export default{
+  async scheduled(event,env){
+    const now=Date.now();
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM pending WHERE expires_at<?').bind(now),
+      env.DB.prepare('DELETE FROM link_codes WHERE expires_at<?').bind(now),
+      env.DB.prepare('DELETE FROM oauth_states WHERE expires_at<?').bind(now),
+      env.DB.prepare('DELETE FROM processed_updates WHERE processed_at<?').bind(now-7*86400000)
+    ]);
+  },
   async fetch(request,env,ctx){
     const url=new URL(request.url);
     try{

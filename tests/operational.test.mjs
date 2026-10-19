@@ -26,7 +26,7 @@ assert.equal(response.status,500);assert.match((await response.json()).error,/OP
 globalThis.fetch=async()=>Response.json({values:[['id',46314,'Café','','Restaurantes',5,'CAD']]});
 const read=await readExpenses('sheet','access');assert.equal(read[0].date,'2026-10-19');
 let written;
-globalThis.fetch=async(url,options)=>{written={url,body:JSON.parse(options.body)};return Response.json({});};
+globalThis.fetch=async(url,options={})=>{written={url,body:options.body?JSON.parse(options.body):null};return Response.json({});};
 await appendExpenses('sheet',[{date:'2026-10-19',description:'=IMPORTXML("x")',amount:5,currency:'CAD'}],'access');
 assert.match(written.url,/valueInputOption=RAW/);assert.equal(written.body.values[0][2],'=IMPORTXML("x")');
 // Sheet creation sends valid quoted A1 ranges before marking the file.

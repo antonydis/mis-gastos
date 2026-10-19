@@ -24,3 +24,11 @@ La configuración canónica es `wrangler.jsonc` en la raíz. Los scripts de `wor
 - Probar /link, enlace vencido y /cancelar.
 
 `npm test` incluye pruebas de comportamiento con servicios simulados: CORS, errores asíncronos, creación de Sheet, fechas, zona horaria, monedas, registro, consultas, menú y reconexión. La autorización real de Google y la entrega del webhook requieren la prueba anterior.
+
+## Actualización de producto
+
+CAD y America/Toronto son los valores iniciales; los perfiles anteriores se ajustan una sola vez, sin convertir sus gastos históricos. Idioma español/inglés en Ajustes. Las preferencias se crean automáticamente y su tabla figura en schema.sql.
+
+Las columnas complementarias se añaden a Movimientos al próximo registro o consulta. Pendientes permite completar la misma fila. Imágenes con múltiples gastos y PDFs necesitan confirmación; límite 25 gastos/8 MB. Ver testing-media.md para las pruebas de extractos y exclusiones.
+
+El cron horario configurado en wrangler.jsonc limpia estados temporales vencidos. Los estados de importación contienen datos financieros temporales hasta confirmación o limpieza; no son un historial permanente.

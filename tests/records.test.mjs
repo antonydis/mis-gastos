@@ -1,0 +1,100 @@
+import assert from 'node:assert/strict';
+import {webcrypto} from 'node:crypto';
+import {handleUpdate,savedMessage} from '../worker/src/telegram.js';
+import {EXPENSE_HEADERS,expenseToRow,missingDetails} from '../worker/src/records.js';
+import {encrypt} from '../worker/src/utils.js';
+if(!globalThis.crypto)globalThis.crypto=webcrypto;
+const originalFetch=globalThis.fetch;
+const key=btoa(String.fromCharCode(...new Uint8Array(32).fill(9)));
+const link={sheet_id:'sheet',google_refresh_token:await encrypt('refresh',key),currency:'CAD',timezone:'America/Toronto'};
+const rows=[['old-id','2026-10-01','Anterior','','Casa',20,'CAD','','Texto','timestamp']];
+const originalRow=[...rows[0]];
+let headers=EXPENSE_HEADERS.slice(0,10),pending=null,appends=0,language=null;
+const messages=[];
+const env={OPENAI_API_KEY:'test',TOKEN_ENCRYPTION_KEY:key,DB:{prepare(sql){return{bind(...args){return{
+ first:async()=>sql.includes('user_preferences')?(language?{language}:null):sql.includes('user_links')?{...link}:pending?{...pending}:null,
+ run:async()=>{
+  if(sql.startsWith('INSERT OR IGNORE INTO user_preferences'))language ||= args[1];
+  if(sql.startsWith('UPDATE user_preferences'))language=args[0];
+  if(sql.startsWith('UPDATE user_links SET currency=?,timezone=?')){link.currency=args[0];link.timezone=args[1];}
+  if(sql.startsWith("UPDATE pending SET kind='import-saving'")){if(pending?.kind!=='import'||pending.payload!==args[1])return{meta:{changes:0}};pending.kind='import-saving';return{meta:{changes:1}};}
+  if(sql.startsWith('INSERT INTO pending'))pending={kind:args[1],payload:args[2],expires_at:args[3]};
+  if(sql.startsWith('DELETE FROM pending')){
+   if(!sql.includes("kind='complete'")||pending?.kind==='complete')pending=null;
+  }
+  return{};
+ }
+};}};}}};
+const analyzed={date:'2026-10-19',description:'Gasolina',merchant:'Shell',category:'Gasolina',amount:33,currency:'CAD',paymentMethod:'',frequency:'Único',expenseType:'Variable',notes:'Vehículo familiar',project:'',amountCAD:33};
+globalThis.fetch=async(url,options={})=>{
+ const body=typeof options.body==='string'?JSON.parse(options.body):null;
+ if(url.endsWith('/getFile'))return Response.json({ok:true,result:{file_path:'documents/statement.pdf'}});
+ if(url.includes('/file/bot'))return new Response('fixture pdf bytes',{headers:{'Content-Type':'application/octet-stream'}});
+ if(url.includes('api.telegram.org')){if(url.endsWith('/sendMessage'))messages.push(body);return Response.json({ok:true,result:{}});}
+ if(url.includes('oauth2.googleapis.com'))return Response.json({access_token:'access'});
+ if(url.includes('api.openai.com')){
+  const input=body.input[0].content.map(x=>x.text||'').join(' ');
+  if(input.includes('sin monto'))return Response.json({output_text:JSON.stringify({expenses:[],question:'¿Cuánto gastaste?',documentType:'expense',totalExpenseCount:1,excludedCount:0,reviewNotes:''})});
+  if(input.includes('dos gastos')||body.input[0].content.some(x=>x.type==='input_file'))return Response.json({output_text:JSON.stringify({expenses:[{...analyzed,amount:12,description:'Café'},{...analyzed,amount:18,description:'Comida'}],question:'',documentType:'statement',excludedCount:2,reviewNotes:'Transferencias y pagos de tarjeta',totalExpenseCount:2})});
+  const result={...analyzed,paymentMethod:input.includes('Información adicional del usuario')?'Banco Ejemplo Mastercard débito':''};
+  return Response.json({output_text:JSON.stringify({expenses:[result],question:''})});
+ }
+ if(url.includes('sheets.googleapis.com')){
+  const decoded=decodeURIComponent(url);
+  if(decoded.includes('Movimientos!A1:Q1')){
+   if(options.method==='PUT')headers=body.values[0];
+   return Response.json({values:[headers]});
+  }
+  if(decoded.includes('Movimientos!A:Q:append')){rows.push(...body.values);appends++;return Response.json({});}
+  if(decoded.includes('Movimientos!A2:Q'))return Response.json({values:rows});
+  if(decoded.includes('Movimientos!A2:A'))return Response.json({values:rows.map(r=>[r[0]])});
+  if(decoded.endsWith('/values:batchUpdate')){
+   for(const entry of body.data){
+    const match=entry.range.match(/!(H|K)(\d+)/);assert.ok(match);
+    const row=rows[Number(match[2])-2],start=match[1]==='H'?7:10;
+    entry.values[0].forEach((v,i)=>row[start+i]=v);
+   }
+   return Response.json({});
+  }
+ }
+ throw Error('Unexpected request '+url);
+};
+const text=value=>({message:{from:{id:1},chat:{id:1,type:'private'},text:value}});
+const callback=data=>({callback_query:{id:'cb',from:{id:1},message:{chat:{id:1,type:'private'}},data}});
+try{
+ await handleUpdate(text('Gasté 33 CAD en gasolina'),env);
+ assert.equal(appends,1);assert.equal(headers.length,17);assert.deepEqual(rows[0],originalRow);
+ assert.equal(rows[1][15],'Por completar');assert.equal(rows[1][16],'método de pago');assert.equal(rows[1][14],33);
+ assert.match(messages.at(-1).text,/Fecha: 2026-10-19/);assert.match(messages.at(-1).text,/Vehículo familiar/);
+ assert.ok(messages.at(-1).reply_markup.inline_keyboard[1].some(x=>x.text==='Completar después'));
+ const id=rows[1][0];
+ await handleUpdate(callback('expense:later:'+id),env);assert.equal(appends,1);
+ await handleUpdate(text('/pendientes'),env);assert.ok(messages.at(-1).reply_markup.inline_keyboard.some(row=>row[0].callback_data==='expense:complete:'+id));
+ await handleUpdate(callback('expense:complete:'+id),env);assert.equal(pending.kind,'complete');assert.match(messages.at(-1).text,/método de pago/);
+ await handleUpdate(text('Banco Ejemplo Mastercard débito'),env);
+ assert.equal(appends,1,'Completar must not append duplicate rows');
+ assert.equal(rows.length,2);assert.equal(rows[1][7],'Banco Ejemplo Mastercard débito');assert.equal(rows[1][15],'Completo');assert.equal(rows[1][16],'');
+ assert.equal(rows[1][0],id);assert.equal(rows[1][5],33);assert.deepEqual(rows[0],originalRow);
+ assert.match(messages.at(-1).text,/no agregué filas/);
+ await handleUpdate(text('Compré café sin monto'),env);assert.equal(appends,1);assert.match(messages.at(-1).text,/Cuánto/);
+ const foreign=expenseToRow({...analyzed,currency:'GTQ',amount:100,amountCAD:null});assert.equal(foreign[14],'');
+ assert.equal(missingDetails(analyzed).length,1);
+ assert.match(savedMessage([{...analyzed,currency:'GTQ',amountCAD:null}]),/no se estimó una tasa/);
+ await handleUpdate(text('/cancelar'),env);
+ const beforeImport=appends;
+ await handleUpdate(text('dos gastos'),env);
+ assert.equal(appends,beforeImport,'No writes before batch confirmation');
+ assert.equal(pending.kind,'import');assert.match(messages.at(-1).text,/2 gastos detectados/);assert.match(messages.at(-1).text,/Omitidos: 2/);
+ const saveAction=messages.at(-1).reply_markup.inline_keyboard[0][0].callback_data;
+ await handleUpdate(callback(saveAction),env);assert.equal(appends,beforeImport+1);assert.equal(rows.length,4);
+ await handleUpdate(callback(saveAction),env);assert.equal(appends,beforeImport+1,'Repeated confirmation cannot append again');
+ await handleUpdate({message:{from:{id:1},chat:{id:1,type:'private'},document:{file_id:'pdf',mime_type:'application/pdf',file_name:'statement.pdf',file_size:4000}}},env);
+ assert.equal(pending.kind,'import');assert.equal(appends,beforeImport+1);
+ const cancelAction=messages.at(-1).reply_markup.inline_keyboard[0][1].callback_data;
+ await handleUpdate(callback(cancelAction),env);assert.equal(appends,beforeImport+1);assert.match(messages.at(-1).text,/cancelada/);
+ await handleUpdate(callback('language:en'),env);assert.equal(language,'en');assert.match(messages.at(-1).text,/Language: English/);
+ await handleUpdate(text('🧾 Add an expense'),env);assert.match(messages.at(-1).text,/Send an expense/);assert.ok(messages.at(-1).reply_markup.keyboard[0].some(x=>x.text==='🧾 Add an expense'));
+ await handleUpdate(text('How much have I spent this month?'),env);assert.match(messages.at(-1).text,/Expenses for/);
+ assert.equal(link.currency,'CAD');assert.equal(link.timezone,'America/Toronto');
+ console.log('OK: rich columns, old rows preserved, optional details, defer, list pending, complete same row, mandatory amount, no invented FX.');
+}finally{globalThis.fetch=originalFetch;}

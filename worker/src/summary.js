@@ -3,10 +3,10 @@ import {localDate,money} from './utils.js';
 export function queryKind(text){
   const t=String(text).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   if(/\d/.test(t))return '';
-  if(/mi hoja|\/hoja|enlace.*hoja/.test(t))return 'sheet';
-  if(/ayer|semana|mes pasado|ano|año/.test(t))return 'unsupported';
-  if(/categorias|categoria.*mas|mas.*categoria/.test(t))return 'categories';
-  if(/este mes|\/mes\b|cuanto.*gast|gastos.*mes/.test(t))return 'month';
+  if(/mi hoja|my sheet|\/hoja|enlace.*hoja/.test(t))return 'sheet';
+  if(/ayer|semana|mes pasado|ano|año|yesterday|last month|week|year/.test(t))return 'unsupported';
+  if(/categorias|categories|category|categoria.*mas|mas.*categoria/.test(t))return 'categories';
+  if(/este mes|this month|\/mes\b|how much.*spent|cuanto.*gast|gastos.*mes/.test(t))return 'month';
   return '';
 }
 

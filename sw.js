@@ -1,5 +1,5 @@
-const CACHE = "mis-gastos-shell-v5";
-const ASSETS = ["./","./index.html","./styles.css","./config.js","./app.js","./manifest.webmanifest","./icon.svg"];
+const CACHE = "mis-gastos-shell-v6";
+const ASSETS = ["./","./index.html","./styles.css","./config.js","./app.js","./manifest.webmanifest","./icon.svg","./worker/src/records.js"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));

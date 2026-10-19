@@ -1,109 +1,35 @@
-# Telegram + Google Sheets
+# Backend de Mis gastos
 
-Backend de Cloudflare Worker para vincular una cuenta de Telegram con el Google Sheet `Mis gastos` del usuario.
+Cloudflare Worker + D1. Configuración canónica: `../wrangler.jsonc`.
 
-## Objetivo del MVP
+## Experiencia
 
-La primera vez:
+- Telegram: texto, fotos, audio e imágenes/PDF adjuntos; CAD y Montreal por defecto.
+- Español e inglés seleccionables en Ajustes.
+- Cada usuario autoriza Google y utiliza su propio Sheet.
+- Los registros incluyen frecuencia, fijo/variable, notas, viaje/proyecto y equivalente CAD explícito.
+- Las consultas calculan el mes actual desde Sheets; no se mezclan monedas.
+- Los datos complementarios se pueden completar después en la misma fila.
+- Imágenes con varios gastos y PDFs: vista previa, totales y confirmación antes de escribir.
+- Hasta 25 gastos por importación y 8 MB por imagen/PDF. Las exclusiones de extractos deben revisarse; no hay conciliación bancaria garantizada.
 
-1. El usuario abre `@missgastosya_bot`.
-2. Envía `/start`.
-3. Toca **Conectar Google**.
-4. Autoriza Google una sola vez.
-5. El Worker crea o reutiliza el único Sheet `Mis gastos` marcado con `mis_gastos=v1`.
-6. Se guarda el vínculo `telegram_user_id → spreadsheet_id` junto con el refresh token de Google cifrado.
+## Configuración
 
-A partir de ahí no hay login repetido para registrar gastos.
+Secrets requeridos: OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, GOOGLE_CLIENT_SECRET, TOKEN_ENCRYPTION_KEY y SETUP_SECRET.
 
-## Registro diario desde Telegram
+La clave de cifrado debe representar 32 bytes en base64/base64url. Mantenerla estable. Redirect URI Google: `https://mis-gastos.adiazsal.workers.dev/oauth/callback`.
 
-El usuario simplemente envía uno de estos tres formatos:
+```bash
+npm run db:init:remote
+npm run deploy
+```
 
-- texto: `450 en almuerzo en La Loma`;
-- foto de un recibo;
-- audio explicando uno o varios gastos.
+Para instalar el webhook y el menú de comandos: POST `/admin/setup-webhook` con X-Setup-Secret desde un entorno privado. No se eliminan mensajes pendientes de Telegram durante esa operación.
 
-Flujo:
+`/connection/check` valida la presencia/formato de la configuración sin exponer sus valores. `/health` indica disponibilidad del servicio; no prueba OAuth ni escritura real en Google.
 
-`Telegram → Worker → OpenAI → Google Sheets`
+D1 almacena vínculos, preferencias y estados temporales. No almacena un historial permanente de movimientos. Los lotes pendientes vencen en 30 minutos; un cron horario elimina los estados vencidos. Los gastos confirmados viven en Sheets.
 
-- Texto usa OpenAI para estructurar el gasto.
-- Foto usa visión para leer directamente el recibo.
-- Audio usa `gpt-4o-mini-transcribe` y luego el modelo estructurador.
-- Si el resultado es claro, el gasto se guarda automáticamente en el Sheet.
-- Si falta un dato esencial o existe una ambigüedad real, el bot hace una sola pregunta antes de guardar.
-- El bot confirma después de escribir en Google Sheets.
+Los comandos `/link`, `/cancelar`, `/pendientes`, `/idioma` y `/moneda` complementan el menú. Para completar un gasto guardado, el usuario responde por texto después de elegirlo en Pendientes.
 
-No hay botón obligatorio **Guardar** en el flujo normal.
-
-## Web / perfil
-
-La web y Telegram comparten el mismo Google Sheet.
-
-Cuando la web está abierta con Google conectado:
-
-- relee el Sheet al recuperar foco;
-- relee al volver a la pestaña;
-- refresca cada 60 segundos mientras está visible.
-
-Por eso un gasto enviado desde Telegram aparece también en la página del usuario sin crear una segunda base de datos.
-
-## Datos guardados en D1
-
-D1 no almacena movimientos financieros.
-
-Solo conserva:
-
-- Telegram user/chat id;
-- refresh token de Google cifrado;
-- spreadsheet id;
-- moneda y zona horaria;
-- estados temporales de OAuth y aclaraciones.
-
-Los gastos viven en Google Sheets.
-
-## Secrets requeridos
-
-- `OPENAI_API_KEY`
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_WEBHOOK_SECRET`
-- `GOOGLE_CLIENT_SECRET`
-- `TOKEN_ENCRYPTION_KEY`
-- `SETUP_SECRET`
-
-## OAuth Google
-
-Redirect URI de producción:
-
-`https://mis-gastos.adiazsal.workers.dev/oauth/callback`
-
-## Activar webhook
-
-Una vez configurados los secrets:
-
-`POST https://mis-gastos.adiazsal.workers.dev/admin/setup-webhook`
-
-Header:
-
-`X-Setup-Secret: <SETUP_SECRET>`
-
-## Pruebas
-
-- `tests/media-pipeline.test.mjs`
-- `tests/telegram-flow.test.mjs`
-- `docs/testing-media.md`
-
-Las pruebas de GitHub Actions verifican la arquitectura y regresiones antes de publicar. La cámara, el micrófono y el OAuth reales requieren además una prueba manual en dispositivo.
-
-
-## Deshacer y errores
-
-Después de guardar un gasto claro, Telegram muestra **Deshacer** durante 10 minutos. Esa acción elimina las filas recién creadas del Sheet usando sus IDs.
-
-Si OpenAI, Google OAuth o Google Sheets falla antes de completar la escritura, el bot responde explícitamente que **no se guardó nada**.
-
-## Moneda
-
-- Si el mensaje trae moneda explícita, se respeta.
-- Si no trae moneda y no hay conflicto, se usa la moneda principal del perfil.
-- Si el símbolo o contexto es realmente ambiguo, el bot pregunta antes de guardar.
+Ver [README principal](../README.md) y [puesta en marcha](../docs/operational-checklist.md).

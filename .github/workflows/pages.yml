@@ -36,6 +36,9 @@ jobs:
       - name: Run operational tests
         run: node tests/operational.test.mjs
 
+      - name: Run rich records tests
+        run: node tests/records.test.mjs
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 

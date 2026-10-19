@@ -1,7 +1,8 @@
+import {EXPENSE_HEADERS,expenseToRow,rowToExpense} from './worker/src/records.js';
 const CONFIG = window.MIS_GASTOS_CONFIG || {};
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const STORAGE_KEY = "mis-gastos-local-v1";
-const SETTINGS_KEY = "mis-gastos-settings-v1";
+const SETTINGS_KEY = "mis-gastos-settings-v2";
 const CATEGORY_MEMORY_KEY = "mis-gastos-category-memory-v1";
 const GOOGLE_CONNECTED_HINT_KEY = "mis-gastos-google-connected-v1";
 const MODEL_VERSION = "0.2.82";
@@ -82,9 +83,9 @@ function escapeHtml(value) {
 
 function getSettings() {
   try {
-    return {...{currency:CONFIG.defaultCurrency || "NIO"}, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")};
+    return {...{currency:CONFIG.defaultCurrency || "CAD"}, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")};
   } catch {
-    return {currency:CONFIG.defaultCurrency || "NIO"};
+    return {currency:CONFIG.defaultCurrency || "CAD"};
   }
 }
 
@@ -184,8 +185,10 @@ function currencyFor(text, fallback) {
   const lower = text.toLowerCase();
   if (/\bcad\b|dólar(?:es)? canadiense|dolar(?:es)? canadiense/.test(lower)) return "CAD";
   if (/\beur\b|€|euros?/.test(lower)) return "EUR";
-  if (/\busd\b|us\$|dólares?|dolares?/.test(lower)) return "USD";
+  if (/\busd\b|us\$|dólares? estadounidenses?|dolares? estadounidenses?/.test(lower)) return "USD";
   if (/\bnio\b|c\$|córdobas?|cordobas?/.test(lower)) return "NIO";
+  if (/\bgtq\b|quetzales?/.test(lower)) return "GTQ";
+  if (/\bmxn\b|pesos? mexicanos?/.test(lower)) return "MXN";
   return fallback;
 }
 
@@ -408,7 +411,7 @@ Entrada (${source}): ${JSON.stringify(text)}`;
       return CATEGORIES.includes(item.category) ? item.category : "Otros";
     })(),
     amount:Number(item.amount),
-    currency:["NIO","USD","CAD","EUR"].includes(String(item.currency || "").toUpperCase()) ? String(item.currency).toUpperCase() : settings.currency,
+    currency:["NIO","USD","CAD","EUR","GTQ","MXN"].includes(String(item.currency || "").toUpperCase()) ? String(item.currency).toUpperCase() : settings.currency,
     paymentMethod:String(item.paymentMethod || "").trim().slice(0,50),
     source,
     registeredAt:new Date().toISOString()
@@ -558,10 +561,15 @@ function hydrateApiExpenses(expenses, source) {
     merchant: String(x.merchant || "").trim().slice(0,100),
     category: CATEGORIES.includes(x.category) ? x.category : "Otros",
     amount: Number(x.amount),
-    currency: ["NIO","USD","CAD","EUR"].includes(String(x.currency || "").toUpperCase())
+    currency: ["NIO","USD","CAD","EUR","GTQ","MXN"].includes(String(x.currency || "").toUpperCase())
       ? String(x.currency).toUpperCase()
       : getSettings().currency,
     paymentMethod: String(x.paymentMethod || "").trim().slice(0,50),
+    frequency:String(x.frequency||'').trim().slice(0,60),
+    expenseType:['Fijo','Variable'].includes(x.expenseType)?x.expenseType:'',
+    notes:String(x.notes||'').trim().slice(0,500),
+    project:String(x.project||'').trim().slice(0,120),
+    amountCAD:x.amountCAD!=null&&Number.isFinite(Number(x.amountCAD))?Number(x.amountCAD):null,
     source,
     registeredAt: new Date().toISOString()
   })).filter((x) => Number.isFinite(x.amount) && x.amount > 0);
@@ -571,7 +579,7 @@ function mediaForm(file) {
   const form = new FormData();
   form.append("file", file, file.name || "media");
   form.append("currency", getSettings().currency);
-  form.append("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Managua");
+  form.append("timezone", "America/Toronto");
   return form;
 }
 
@@ -594,7 +602,7 @@ async function apiTextClarification(text, source) {
       text,
       source,
       currency:getSettings().currency,
-      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Managua"
+      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Toronto"
     })
   });
   const data = await response.json().catch(() => ({}));
@@ -694,17 +702,8 @@ async function prepareLocalUnderstanding() {
   }
 }
 
-function objectToSheetRow(x) {
-  return [x.id,x.date,x.description,x.merchant,x.category,x.amount,x.currency,x.paymentMethod,x.source,x.registeredAt];
-}
-
-function sheetRowToObject(row) {
-  return {
-    id:row[0] || "", date:row[1] || "", description:row[2] || "", merchant:row[3] || "",
-    category:row[4] || "Otros", amount:Number(row[5] || 0), currency:row[6] || getSettings().currency,
-    paymentMethod:row[7] || "", source:row[8] || "", registeredAt:row[9] || ""
-  };
-}
+function objectToSheetRow(x) { return expenseToRow(x); }
+function sheetRowToObject(row) { return rowToExpense(row); }
 
 async function googleFetch(url, options = {}) {
   if (!state.accessToken) throw new Error("Conecta Google para continuar.");
@@ -734,7 +733,7 @@ async function findExpenseSheet() {
 }
 
 async function createExpenseSheet() {
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Managua";
+  const tz = "America/Toronto";
   const created = await googleFetch("https://sheets.googleapis.com/v4/spreadsheets", {
     method:"POST",
     body:JSON.stringify({
@@ -756,7 +755,7 @@ async function createExpenseSheet() {
     body:JSON.stringify({
       valueInputOption:"RAW",
       data:[
-        {range:"Movimientos!A1:J1",values:[["ID","Fecha","Descripción","Comercio","Categoría","Monto","Moneda","Método","Fuente","Registrado"]]},
+        {range:"Movimientos!A1:Q1",values:[EXPENSE_HEADERS]},
         {range:"'Registro diario'!A1:C1",values:[["Fecha","Estado","Registrado"]]},
         {range:"'Categorías'!A1:C" + (CATEGORIES.length + 1),values:[["Categoría","Activa","Palabras clave"],...CATEGORIES.map((c) => [c,true,""])]},
         {range:"'Resúmenes'!A1:J1",values:[["Periodo","Desde","Hasta","Total","Moneda","Mayor categoría","% mayor categoría","Variación %","Resumen","Generado"]]},
@@ -775,7 +774,7 @@ async function createExpenseSheet() {
 async function syncLocalToGoogle() {
   const pending = localRows();
   if (!pending.length) return 0;
-  const range = encodeURIComponent("Movimientos!A:J");
+  const range = encodeURIComponent("Movimientos!A:Q");
   await googleFetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${state.sheetId}/values/${range}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {method:"POST", body:JSON.stringify({values:pending.map(objectToSheetRow)})}
@@ -787,6 +786,10 @@ async function syncLocalToGoogle() {
 async function ensureGoogleSheet() {
   let file = await findExpenseSheet();
   if (!file) file = await createExpenseSheet();
+  const headerUrl=`https://sheets.googleapis.com/v4/spreadsheets/${file.id}/values/${encodeURIComponent('Movimientos!A1:Q1')}`;
+  const header=(await googleFetch(headerUrl)).values?.[0]||[];
+  if(header.slice(10).some((v,i)=>v&&v!==EXPENSE_HEADERS[i+10]))throw new Error('Las columnas adicionales no coinciden con Mis gastos. No modifiqué la hoja.');
+  if(header.length!==EXPENSE_HEADERS.length||header.some((v,i)=>v!==EXPENSE_HEADERS[i]))await googleFetch(headerUrl+'?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:[EXPENSE_HEADERS]})});
   state.sheetId = file.id;
   state.sheetUrl = file.webViewLink || `https://docs.google.com/spreadsheets/d/${file.id}/edit`;
   state.backend = "google";
@@ -804,7 +807,7 @@ async function ensureGoogleSheet() {
 
 async function readRows() {
   if (state.backend === "local") return localRows();
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${state.sheetId}/values/${encodeURIComponent("Movimientos!A2:J")}`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${state.sheetId}/values/${encodeURIComponent("Movimientos!A2:Q")}`;
   const data = await googleFetch(url);
   return (data.values || []).map(sheetRowToObject);
 }
@@ -815,7 +818,7 @@ async function appendRows(rows) {
     saveLocalRows(all);
     return;
   }
-  const range = encodeURIComponent("Movimientos!A:J");
+  const range = encodeURIComponent("Movimientos!A:Q");
   await googleFetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${state.sheetId}/values/${range}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {method:"POST", body:JSON.stringify({values:rows.map(objectToSheetRow)})}

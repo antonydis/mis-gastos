@@ -1,105 +1,30 @@
-# Pruebas de foto, audio, Telegram y sesión Google
+# Pruebas de Mis gastos
 
-Fecha: 2026-10-09
+## Automatizadas
 
-## Estado actual
+Desde la raíz: `npm test` y `npm run check`.
 
-### Web: foto de recibo
+- media-pipeline: contratos de texto/foto/audio y clasificación contextual.
+- telegram-flow: vinculación, escritura, deshacer y actualización del historial.
+- operational: comportamiento con servicios simulados, CORS, errores de OAuth, fechas de Sheets, MIME de descargas Telegram y normalización de audios .oga/.ogg.
+- records: ampliación de columnas sin mover filas antiguas, detalles pendientes, completar la misma fila, lotes sin escritura previa, confirmar/cancelar, confirmación repetida y español/inglés.
 
-**Estado: integración automatizada OK; prueba física en móvil pendiente.**
+Los servicios externos se simulan en estas pruebas. Pasarlas no demuestra que cada recibo o extracto real se haya interpretado correctamente.
 
-Verificado:
+## Pruebas manuales antes de ampliar usuarios
 
-1. El navegador captura/selecciona una imagen.
-2. La web envía la imagen a `POST /ai/receipt`.
-3. El Worker envía la imagen directamente a OpenAI Vision.
-4. La respuesta usa un JSON Schema estricto con fecha, descripción, comercio, categoría, monto, moneda y método.
-5. La API key de OpenAI no está en el frontend.
-6. El usuario revisa la propuesta antes de guardar desde la web.
+1. Conectar dos usuarios diferentes; cada uno debe ver exclusivamente su hoja.
+2. Usar CAD sin escribir moneda y una moneda extranjera explícita; conservar montos originales y no inventar conversiones.
+3. Probar hoy/ayer alrededor de medianoche de Montreal, incluidos cambios estacionales.
+4. Registrar un gasto por texto, foto y audio, revisar el resumen contra el original y usar Deshacer.
+5. Omitir monto: debe preguntar antes de escribir. Omitir método de pago: puede guardar con datos pendientes, completables después.
+6. Completar un registro y verificar que no apareció otra fila.
+7. Enviar una imagen con dos recibos o una tabla de compras: revisar vista previa, cantidad y totales, cancelar y comprobar que no se guardó nada.
+8. Repetir y confirmar una vez; pulsar de nuevo y comprobar que no duplica el lote.
+9. Enviar PDF de extracto con compras, transferencias, ingresos, pagos de tarjeta y saldos. Revisar exclusiones y verificar cada compra antes de confirmar.
+10. Probar un documento con más de 25 gastos y un PDF ilegible/protegido. No debe guardar una lista parcial silenciosamente; debe pedir dividir o aclarar.
+11. Cambiar idioma en Ajustes y probar bienvenida, menú, registro, preguntas, importación y consultas en español e inglés.
 
-Prueba manual pendiente:
+## Límites de esta versión
 
-- Samsung/Android Chrome con foto real;
-- iPhone/Safari;
-- recibos con subtotal, impuestos, propina y total;
-- baja luz o recibo inclinado.
-
-### Web: audio
-
-**Estado: integración automatizada OK; prueba física en móvil pendiente.**
-
-Verificado:
-
-1. La web solicita micrófono y graba con `MediaRecorder`.
-2. Envía el archivo a `POST /ai/audio`.
-3. El Worker transcribe con `gpt-4o-mini-transcribe`.
-4. La transcripción pasa al modelo estructurador.
-5. El usuario revisa la propuesta antes de guardar desde la web.
-
-### Telegram
-
-**Estado: flujo funcional implementado y cubierto por pruebas de contrato; E2E real pendiente de webhook/OAuth.**
-
-Objetivo probado por código:
-
-1. `/start` entrega **Conectar Google** si el usuario no está vinculado.
-2. OAuth guarda una asociación persistente entre Telegram y el `spreadsheet_id`.
-3. Google reutiliza el Sheet marcado `mis_gastos=v1`.
-4. Texto se analiza con OpenAI.
-5. Foto se descarga con Telegram `getFile` y se analiza con visión.
-6. Audio/voice se descarga con Telegram `getFile`, se transcribe y estructura.
-7. Si el resultado es claro, se escribe directamente en Google Sheets.
-8. Si falta algo esencial, se conserva contexto temporal y se hace una pregunta.
-9. El bot confirma después de guardar.
-
-No hay confirmación obligatoria para cada gasto.
-
-### Página / perfil
-
-La página y Telegram usan el mismo Sheet como fuente de verdad.
-
-Cuando la web ya tiene Google conectado, vuelve a leer el Sheet:
-
-- al recuperar foco;
-- al volver a la pestaña;
-- cada 60 segundos mientras está visible.
-
-Esto permite que un gasto registrado por Telegram aparezca después en el dashboard web.
-
-## Regresión de categorización
-
-Caso automatizado:
-
-`Ayer gasté 2300 en supermercado y almorcé en La Loma donde me gasté 450`
-
-Resultado esperado:
-
-- 2300 NIO → Supermercado
-- 450 NIO → Almuerzo
-- Comercio: La Loma
-- Categoría: Restaurantes
-
-## Pruebas automatizadas
-
-```bash
-node tests/media-pipeline.test.mjs
-node tests/telegram-flow.test.mjs
-```
-
-GitHub Actions ejecuta ambos conjuntos antes del deploy de Pages.
-
-## Prueba E2E pendiente
-
-Una vez activado el webhook de producción, ejecutar en `@missgastosya_bot`:
-
-1. `/start`
-2. conectar Google;
-3. enviar texto;
-4. verificar fila en Google Sheet;
-5. enviar foto real de recibo;
-6. verificar fila;
-7. enviar voice note;
-8. verificar fila;
-9. abrir/volver a la web y verificar que los tres movimientos aparezcan.
-
-Hasta completar esos pasos no se debe marcar Telegram como E2E verificado.
+Hasta 8 MB por imagen/PDF y 25 gastos por lote. Excel no se importa. Las categorías de la hoja son canónicas en español. Las consultas disponibles cubren el mes actual. Completar detalles existentes se hace por texto. Las importaciones requieren revisión humana, no son una conciliación bancaria automática.

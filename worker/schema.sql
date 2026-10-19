@@ -3,8 +3,8 @@ CREATE TABLE IF NOT EXISTS user_links (
   chat_id TEXT NOT NULL,
   google_refresh_token TEXT NOT NULL,
   sheet_id TEXT NOT NULL,
-  currency TEXT NOT NULL DEFAULT 'NIO',
-  timezone TEXT NOT NULL DEFAULT 'America/Managua',
+  currency TEXT NOT NULL DEFAULT 'CAD',
+  timezone TEXT NOT NULL DEFAULT 'America/Toronto',
   linked_at INTEGER NOT NULL
 );
 
@@ -32,4 +32,10 @@ CREATE TABLE IF NOT EXISTS pending (
 CREATE TABLE IF NOT EXISTS processed_updates (
   update_id TEXT PRIMARY KEY,
   processed_at INTEGER NOT NULL
+);
+
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+  telegram_user_id TEXT PRIMARY KEY,
+  language TEXT NOT NULL DEFAULT 'es'
 );
