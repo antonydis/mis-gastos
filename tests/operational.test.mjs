@@ -60,5 +60,28 @@ await handleUpdate(update('Gasté 5 CAD en café'),{...env,OPENAI_API_KEY:'test'
 await handleUpdate(update('/link'),env);assert.match(messages.at(-1).reply_markup.inline_keyboard[0][0].url,/link=/);
 await handleUpdate({...update(''),message:{...update('').message,voice:{file_id:'audio'}}},env);
 assert.match(messages.at(-1).text,/No pude confirmar/);
+// OAuth failures produce specific, safe diagnostics instead of one generic screen.
+const oauthEnv={...env,GOOGLE_CLIENT_SECRET:'test-secret',PUBLIC_BASE_URL:'https://api.test',DB:{
+  prepare(sql){return{bind(){return{first:async()=>sql.includes('oauth_states')?{link_code:'test-link',expires_at:Date.now()+60000}:{code:'test-link',expires_at:Date.now()+60000,used:0},run:async()=>({})};}};},
+  batch:async()=>[]
+}};
+const callback=()=>new Request('https://api.test/oauth/callback?state=test-state&code=test-code');
+let result=await worker.fetch(callback(),{...oauthEnv,GOOGLE_CLIENT_SECRET:''},{});
+assert.equal(new URL(result.headers.get('Location')).searchParams.get('reason'),'missing-google-secret');
+result=await worker.fetch(callback(),{...oauthEnv,TOKEN_ENCRYPTION_KEY:'invalid'},{});
+assert.equal(new URL(result.headers.get('Location')).searchParams.get('reason'),'google-encryption');
+globalThis.fetch=async()=>Response.json({error:'invalid_client',error_description:'private details'},{status:401});
+result=await worker.fetch(callback(),oauthEnv,{});
+assert.equal(new URL(result.headers.get('Location')).searchParams.get('reason'),'oauth-client');
+assert.ok(!result.headers.get('Location').includes('private details'));
+for(const service of ['drive','sheets']){
+ globalThis.fetch=async url=>{
+  if(url.includes('oauth2.googleapis.com'))return Response.json({access_token:'test-access',refresh_token:'test-refresh'});
+  if(service==='sheets'&&url.includes('drive'))return Response.json({files:[]});
+  return Response.json({error:{message:'private Google error',details:[{reason:'SERVICE_DISABLED'}]}},{status:403});
+ };
+ result=await worker.fetch(callback(),oauthEnv,{});
+ assert.equal(new URL(result.headers.get('Location')).searchParams.get('reason'),service+'-api-disabled');
+}
 console.error=quiet;globalThis.fetch=originalFetch;
 console.log('OK: CORS, async failures, timezone, currencies, Google dates, safe writes, Telegram menu/link/media failures.');

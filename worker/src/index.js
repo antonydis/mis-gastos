@@ -1,6 +1,6 @@
 import {googleAuthUrl,exchangeCode,ensureSheet} from './google.js';
 import {createLink,handleUpdate,saveGoogleLink,setupWebhook} from './telegram.js';
-import {randomCode} from './utils.js';
+import {randomCode,encrypt} from './utils.js';
 import {analyzeReceipt,analyzeAudio,analyzeText} from './openai.js';
 
 function corsHeaders(env,request){
@@ -34,15 +34,32 @@ async function oauthCallback(url,env){
   if(!st||Number(st.expires_at)<=Date.now())return front(env,{telegram:'error',reason:'expired-state'});
   const link=await env.DB.prepare('SELECT * FROM link_codes WHERE code=?').bind(st.link_code).first();
   if(!link||link.used||Number(link.expires_at)<=Date.now())return front(env,{telegram:'error',reason:'expired-link'});
+  let stage='configuration';
+  try{
+  if(!env.GOOGLE_CLIENT_SECRET)return front(env,{telegram:'error',reason:'missing-google-secret'});
+  stage='encryption';
+  await encrypt('configuration-check',env.TOKEN_ENCRYPTION_KEY||'');
+  stage='exchange';
   const token=await exchangeCode(code,env);
   if(!token.refresh_token)return front(env,{telegram:'error',reason:'no-refresh-token'});
+  stage='sheet';
   const sheet=await ensureSheet(token.access_token,env);
+  stage='save-link';
   await saveGoogleLink(link,token.refresh_token,sheet.id,env);
   await env.DB.batch([
     env.DB.prepare('UPDATE link_codes SET used=1 WHERE code=?').bind(link.code),
     env.DB.prepare('DELETE FROM oauth_states WHERE state=?').bind(state)
   ]);
   return front(env,{telegram:'linked'});
+  }catch(error){
+    console.error('OAuth linking failed',stage,error);
+    let reason='google-'+stage;
+    if(error.oauthCode==='invalid_client')reason='oauth-client';
+    if(error.oauthCode==='invalid_grant')reason='oauth-code';
+    if(['SERVICE_DISABLED','accessNotConfigured'].includes(error.googleReason))reason=error.googleService+'-api-disabled';
+    else if(error.httpStatus===403)reason=error.googleService+'-permission';
+    return front(env,{telegram:'error',reason});
+  }
 }
 
 function mediaProfile(form,env){

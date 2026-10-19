@@ -1060,9 +1060,23 @@ function setupTelegramLinking() {
   if (telegram === "error") {
     panel.hidden = false;
     title.textContent = "No pude conectar Telegram";
-    text.textContent = reason === "expired-link"
-      ? "El enlace venció. Vuelve a Telegram y usa /link para generar uno nuevo."
-      : "Vuelve a Telegram y usa /link para intentarlo otra vez.";
+    const errors = {
+      "expired-link":"El enlace venció o ya se usó. Vuelve a Telegram y envía /link.",
+      "expired-state":"La autorización venció. Vuelve a Telegram y envía /link.",
+      "no-refresh-token":"Google no entregó el permiso necesario para guardar gastos cuando cierres esta página. Vuelve a Telegram y envía /link para autorizar de nuevo.",
+      "missing-google-secret":"Falta configurar la conexión de Google en el servidor. No es un problema de tu correo.",
+      "google-encryption":"La clave de protección del servidor falta o tiene un formato incorrecto. No es un problema de tu correo.",
+      "oauth-client":"Google rechazó las credenciales de la aplicación. Hay que revisar la configuración del servidor.",
+      "oauth-code":"Google rechazó una autorización vencida o ya utilizada. Vuelve a Telegram y envía /link.",
+      "drive-api-disabled":"Google Drive API no está habilitada en el proyecto de la aplicación. Hay que activarla en Google Cloud.",
+      "sheets-api-disabled":"Google Sheets API no está habilitada en el proyecto de la aplicación. Hay que activarla en Google Cloud.",
+      "drive-permission":"Google no permitió buscar o preparar el archivo en Drive. Hay que revisar los permisos autorizados.",
+      "sheets-permission":"Google no permitió crear o preparar la hoja. Hay que revisar los permisos autorizados.",
+      "google-exchange":"No se pudo completar el intercambio de permisos con Google.",
+      "google-sheet":"Google autorizó la conexión, pero no se pudo crear o preparar la hoja.",
+      "google-save-link":"No se pudo guardar el vínculo entre Telegram y tu hoja. Hay que revisar el servidor."
+    };
+    text.textContent = (errors[reason] || "No se pudo completar la conexión. Vuelve a Telegram y envía /link.") + " Código: " + (Object.hasOwn(errors,reason) ? reason : "oauth");
     button.hidden = true;
     return;
   }
