@@ -61,14 +61,27 @@ function profile(link,env){
   };
 }
 
-async function telegramFile(fileId,env,fallbackName){
+export function normalizeTelegramFile(blob,path,fallbackName,originalType=''){
+  let name=(path.split('/').pop()||fallbackName||'archivo').replace(/[^a-zA-Z0-9._-]/g,'_');
+  name=name.replace(/\.oga$/i,'.ogg');
+  const types={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif',ogg:'audio/ogg',mp3:'audio/mpeg',m4a:'audio/mp4',mp4:'audio/mp4',wav:'audio/wav',webm:'audio/webm',flac:'audio/flac',pdf:'application/pdf'};
+  const extension=name.split('.').pop().toLowerCase();
+  const generic=type=>!type||['application/octet-stream','binary/octet-stream','application/binary'].includes(type.split(';')[0]);
+  const type=!generic(originalType)?originalType:types[extension]||(!generic(blob.type)?blob.type:types[(fallbackName||'').split('.').pop()]||'application/octet-stream');
+  return new File([blob],name,{type});
+}
+
+async function mediaStep(stage,task){
+  try{return await task();}catch(error){error.mediaStage ||= stage;throw error;}
+}
+
+async function telegramFile(fileId,env,fallbackName,originalType=''){
   const info=await call('getFile',{file_id:fileId},env);
   if(!info?.file_path)throw new Error('Telegram no devolvió el archivo.');
   const response=await fetch('https://api.telegram.org/file/bot'+env.TELEGRAM_BOT_TOKEN+'/'+info.file_path);
   if(!response.ok)throw new Error('No pude descargar el archivo de Telegram.');
   const blob=await response.blob();
-  const name=(info.file_path.split('/').pop()||fallbackName||'archivo').replace(/[^a-zA-Z0-9._-]/g,'_');
-  return new File([blob],name,{type:blob.type||response.headers.get('content-type')||'application/octet-stream'});
+  return normalizeTelegramFile(blob,info.file_path,fallbackName,originalType);
 }
 
 function savedMessage(expenses){
@@ -134,8 +147,8 @@ async function processPhoto(uid,chat,message,link,env){
   const best=photos[photos.length-1];
   if(!best?.file_id)throw new Error('No encontré la foto.');
   await send(chat,'Analizando el recibo…',env);
-  const file=await telegramFile(best.file_id,env,'recibo.jpg');
-  const result=await analyzeReceipt(file,profile(link,env),env);
+  const file=await mediaStep('file-download',()=>telegramFile(best.file_id,env,'recibo.jpg','image/jpeg'));
+  const result=await mediaStep('photo-analysis',()=>analyzeReceipt(file,profile(link,env),env));
   if(result.question){
     await rememberClarification(uid,{source:'Foto',originalText:message.caption||'',partial:result.expenses||[],question:result.question},env);
     return send(chat,result.question,env);
@@ -147,8 +160,8 @@ async function processAudio(uid,chat,message,link,env){
   const media=message.voice||message.audio;
   if(!media?.file_id)throw new Error('No encontré el audio.');
   await send(chat,'Entendiendo tu audio…',env);
-  const file=await telegramFile(media.file_id,env,message.voice?'gasto.ogg':'gasto-audio');
-  const result=await analyzeAudio(file,profile(link,env),env);
+  const file=await mediaStep('file-download',()=>telegramFile(media.file_id,env,message.voice?'gasto.ogg':media.file_name||'gasto-audio',media.mime_type||(message.voice?'audio/ogg':'')));
+  const result=await mediaStep('audio-analysis',()=>analyzeAudio(file,profile(link,env),env));
   if(result.question){
     await rememberClarification(uid,{
       source:'Audio',
@@ -245,7 +258,7 @@ export async function handleUpdate(update,env){
       const type=m.document.mime_type||'';
       if(type!=='application/pdf'&&!type.startsWith('image/'))return send(chat,'Envíame una foto o un PDF de hasta 8 MB. Los archivos Excel todavía no se importan.',env);
       if(m.document.file_size>8*1024*1024)return send(chat,'El archivo supera 8 MB. Divídelo en archivos más pequeños.',env);
-      const raw=await telegramFile(m.document.file_id,env,'gastos.pdf');
+      const raw=await mediaStep('file-download',()=>telegramFile(m.document.file_id,env,m.document.file_name||'gastos.pdf',type));
       const file=new File([raw],raw.name,{type});
       const result=await analyzeDocument(file,profile(link,env),env);
       if(result.question){
@@ -260,6 +273,7 @@ export async function handleUpdate(update,env){
     return send(chat,'Envíame un gasto por texto, una foto del recibo o un audio.',env);
   }catch(e){
     console.error('Telegram expense error',e);
+    if(['file-download','photo-analysis','audio-transcription','audio-analysis'].includes(e.mediaStage))return send(chat,'No pude procesar el archivo; no llegué a guardarlo. Código: '+e.mediaStage+'. Tu conexión con Google sigue configurada.',env);
     return send(chat,'No pude confirmar el registro. Revisa tu hoja antes de reenviarlo para evitar duplicados. Si el problema continúa, usa /link para reconectar Google.',env);
   }
 }

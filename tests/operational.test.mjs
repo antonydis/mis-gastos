@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import worker from '../worker/src/index.js';
-import {handleUpdate} from '../worker/src/telegram.js';
+import {handleUpdate,normalizeTelegramFile} from '../worker/src/telegram.js';
 import {readExpenses,appendExpenses,ensureSheet} from '../worker/src/google.js';
 import {encrypt} from '../worker/src/utils.js';
 import {queryKind,monthlySummary} from '../worker/src/summary.js';
@@ -59,12 +59,39 @@ await handleUpdate(update('/moneda USD'),env);assert.ok(writes.some(x=>x.sql.inc
 await handleUpdate(update('Gasté 5 CAD en café'),{...env,OPENAI_API_KEY:'test'});assert.match(messages.at(-1).text,/Guardado/);assert.match(messages.at(-1).text,/my-sheet/);assert.ok(messages.at(-1).reply_markup.inline_keyboard[0][0].callback_data.startsWith('expense:undo:'));
 await handleUpdate(update('/link'),env);assert.match(messages.at(-1).reply_markup.inline_keyboard[0][0].url,/link=/);
 await handleUpdate({...update(''),message:{...update('').message,voice:{file_id:'audio'}}},env);
-assert.match(messages.at(-1).text,/No pude confirmar/);
+assert.match(messages.at(-1).text,/Código: file-download/);
 const directPage=await worker.fetch(new Request('https://api.test/connection/result?telegram=error&reason=google-encryption'),env,{});
 assert.equal(directPage.headers.get('Cache-Control'),'no-store');
 assert.match(await directPage.text(),/Código: <strong>google-encryption/);
 const configCheck=await worker.fetch(new Request('https://api.test/connection/check'),env,{});
 assert.equal((await configCheck.json()).reason,'missing-google-secret');
+// Telegram downloads can lose MIME types and use .oga for Ogg voice notes.
+const normalizedPhoto=normalizeTelegramFile(new Blob(['photo'],{type:'application/octet-stream'}),'photos/file.jpg','recibo.jpg');
+assert.equal(normalizedPhoto.type,'image/jpeg');
+const normalizedVoice=normalizeTelegramFile(new Blob(['OggS'],{type:'application/octet-stream'}),'voice/file.oga','gasto.ogg','audio/ogg');
+assert.equal(normalizedVoice.type,'audio/ogg');assert.equal(normalizedVoice.name,'file.ogg');
+let imageSeen=false,audioSeen=false;
+globalThis.fetch=async(url,options={})=>{
+ if(url.includes('/getFile')){const body=JSON.parse(options.body);return Response.json({ok:true,result:{file_path:body.file_id==='photo'?'photos/file.jpg':'voice/file.oga'}});}
+ if(url.includes('/file/bot'))return new Response('test media bytes',{headers:{'Content-Type':'application/octet-stream'}});
+ if(url.includes('api.telegram.org')){messages.push(JSON.parse(options.body));return Response.json({ok:true,result:{}});}
+ if(url.includes('/audio/transcriptions')){
+  const file=options.body.get('file');assert.equal(file.name,'file.ogg');assert.equal(file.type,'audio/ogg');audioSeen=true;
+  return Response.json({text:'Gasté 5 CAD en café'});
+ }
+ if(url.includes('/responses')){
+  const body=JSON.parse(options.body);const image=body.input[0].content.find(x=>x.type==='input_image');
+  if(image){assert.ok(image.image_url.startsWith('data:image/jpeg;base64,'));imageSeen=true;}
+  return Response.json({output_text:JSON.stringify({expenses:[{date:'2026-10-19',description:'Café',amount:5,currency:'CAD',category:'Restaurantes'}],question:''})});
+ }
+ if(url.includes('oauth2.googleapis.com'))return Response.json({access_token:'access'});
+ if(url.includes('sheets.googleapis.com'))return Response.json({});
+ throw Error('Unexpected request');
+};
+await handleUpdate({message:{from:{id:1},chat:{id:1,type:'private'},photo:[{file_id:'photo'}]}},{...env,OPENAI_API_KEY:'test'});
+assert.ok(imageSeen);assert.match(messages.at(-1).text,/Guardado/);
+await handleUpdate({message:{from:{id:1},chat:{id:1,type:'private'},voice:{file_id:'voice',mime_type:'audio/ogg'}}},{...env,OPENAI_API_KEY:'test'});
+assert.ok(audioSeen);assert.match(messages.at(-1).text,/Guardado/);
 // OAuth failures produce specific, safe diagnostics instead of one generic screen.
 const oauthEnv={...env,GOOGLE_CLIENT_SECRET:'test-secret',PUBLIC_BASE_URL:'https://api.test',DB:{
   prepare(sql){return{bind(){return{first:async()=>sql.includes('oauth_states')?{link_code:'test-link',expires_at:Date.now()+60000}:{code:'test-link',expires_at:Date.now()+60000,used:0},run:async()=>({})};}};},

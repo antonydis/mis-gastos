@@ -174,7 +174,8 @@ export async function transcribeAudio(file, env) {
 }
 
 export async function analyzeAudio(file, profile, env) {
-  const transcript = await transcribeAudio(file, env);
+  let transcript;
+  try{transcript=await transcribeAudio(file,env);}catch(error){error.mediaStage='audio-transcription';throw error;}
   const result = await structuredExpenseFromContent([
     { type: "input_text", text: `Transcripción:\n${transcript}` }
   ], profile, env, "Audio");
