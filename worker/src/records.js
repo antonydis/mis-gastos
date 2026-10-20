@@ -1,8 +1,7 @@
-export const EXPENSE_HEADERS=['ID','Fecha','Descripción','Comercio','Categoría','Monto original','Moneda','Método de pago','Fuente','Registrado','Frecuencia','Tipo','Notas','Viaje/proyecto','Monto CAD','Estado','Datos pendientes'];
+export const EXPENSE_HEADERS=['ID','Fecha','Descripción','Comercio','Categoría','Monto','Moneda','Pago','Fuente','Registrado','Frecuencia','Tipo','Notas','Viaje/proyecto','Monto CAD','Estado','Datos pendientes'];
 
-export function missingDetails(x){
-  return [['paymentMethod','método de pago'],['frequency','frecuencia'],['expenseType','fijo o variable']].filter(([key])=>!x[key]).map(([,label])=>label);
-}
+// Optional details never make a valid expense incomplete.
+export function missingDetails(){return [];}
 
 export function expenseToRow(x){
   const missing=missingDetails(x);

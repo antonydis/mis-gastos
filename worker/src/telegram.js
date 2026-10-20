@@ -1,9 +1,9 @@
+import {startProfile,handleProfileCallback,handleProfileText} from './profile.js';
 import {preferences,setLanguage} from './preferences.js';
 import {translateMessage,translateMarkup,normalizeMenu} from './i18n.js';
-import {missingDetails} from './records.js';
 import {decrypt,encrypt,money,randomCode} from './utils.js';
-import {appendExpenses,deleteExpensesByIds,refreshAccess,readExpenses,completeExpenses} from './google.js';
-import {analyzeText,analyzeReceipt,analyzeAudio,analyzeDocument} from './openai.js';
+import {appendExpenses,deleteExpensesByIds,refreshAccess,readExpenses,correctExpense} from './google.js';
+import {analyzeText,analyzeReceipt,analyzeAudio,analyzeDocument,transcribeAudio} from './openai.js';
 import {queryKind,monthlySummary} from './summary.js';
 
 const LINK_TTL=15*60*1000;
@@ -21,7 +21,7 @@ async function call(method,payload,env){
 }
 
 const menu={keyboard:[[{text:'🧾 Registrar gasto'},{text:'📥 Importar movimientos'}],[{text:'📊 Este mes'},{text:'🏷 Categorías'}],[{text:'📝 Pendientes'},{text:'📄 Mi hoja'}],[{text:'⚙️ Ajustes'}]],resize_keyboard:true};
-const help='Envíame un gasto por texto, foto o audio.\nEjemplo: «Ayer pagué 25 en supermercado con mi tarjeta RBC».\nPara varios gastos, envía una imagen o PDF.\nLos botones te permiten ver tus totales, completar datos o abrir tu hoja.';
+const help='Envíame un gasto por texto, foto o audio.\nEjemplo: «Ayer pagué 25 en supermercado con mi tarjeta RBC».\nPara varios gastos, envía una imagen o PDF.\nLos botones te permiten ver tus totales, corregir un gasto o abrir tu hoja.';
 export async function send(chatId,text,env,reply_markup=menu){
   text=translateMessage(text,env.BOT_LANGUAGE);reply_markup=translateMarkup(reply_markup,env.BOT_LANGUAGE);
   while(text.length>3800){let at=text.lastIndexOf('\n',3800);if(at<1)at=3800;await call('sendMessage',{chat_id:chatId,text:text.slice(0,at)},env);text=text.slice(at).trimStart();}
@@ -29,7 +29,7 @@ export async function send(chatId,text,env,reply_markup=menu){
 }
 
 export async function setupWebhook(env){
-  await call('setMyCommands',{commands:[{command:'start',description:'Conectar Google y empezar'},{command:'mes',description:'Ver gastos de este mes'},{command:'categorias',description:'Ver gastos por categoría'},{command:'pendientes',description:'Completar datos guardados'},{command:'idioma',description:'Español / English'},{command:'hoja',description:'Abrir mi Google Sheet'},{command:'link',description:'Volver a conectar Google'},{command:'cancelar',description:'Cancelar una aclaración'},{command:'ayuda',description:'Cómo usar Mis gastos'}]},env);
+  await call('setMyCommands',{commands:[{command:'start',description:'Conectar Google y empezar'},{command:'mes',description:'Ver gastos de este mes'},{command:'categorias',description:'Ver gastos por categoría'},{command:'corregir',description:'Corregir un gasto'},{command:'perfil',description:'Moneda, ciudad e idioma'},{command:'idioma',description:'Español / English'},{command:'hoja',description:'Abrir mi Google Sheet'},{command:'link',description:'Volver a conectar Google'},{command:'cancelar',description:'Cancelar sin cambiar tus gastos'},{command:'ayuda',description:'Cómo usar Mis gastos'}]},env);
   return call('setWebhook',{
     url:env.PUBLIC_BASE_URL.replace(/\/$/,'')+'/telegram/webhook',
     secret_token:env.TELEGRAM_WEBHOOK_SECRET,
@@ -95,13 +95,11 @@ export function savedMessage(expenses){
     '✓ '+x.description+' · '+money(x.amount,x.currency),
     'Fecha: '+x.date+' · Categoría: '+x.category,
     'Comercio: '+(x.merchant||'Sin indicar'),
-    'Pago: '+(x.paymentMethod||'Por completar'),
-    'Frecuencia: '+(x.frequency||'Por completar')+' · Tipo: '+(x.expenseType||'Por completar'),
+    'Pago: '+(x.paymentMethod||'Sin indicar'),
     ...(x.project?['Viaje/proyecto: '+x.project]:[]),
     ...(x.notes?['Notas: '+x.notes]:[]),
     ...(x.currency!=='CAD'?['Equivalente CAD: '+(x.amountCAD!=null?money(x.amountCAD,'CAD'):'Sin conversión; no se estimó una tasa')]:[]),
     ...(x.possibleDuplicate?['⚠ Posible repetido: hay un gasto con la misma fecha, moneda y monto. Revisa tu hoja antes de confirmar.']:[]),
-    ...(missingDetails(x).length?['Pendiente: '+missingDetails(x).join(', ')]:[])
   ].join('\n'));
   return 'Guardado en Mis gastos:\n'+lines.join('\n\n');
 }
@@ -113,28 +111,53 @@ export function shortReceipt(expenses){
     ...(x.paymentMethod?['Pago: '+x.paymentMethod]:[]),
     ...(x.possibleDuplicate?['⚠ Posible repetido: hay un gasto con la misma fecha, moneda y monto. Revisa tu hoja antes de confirmar.']:[]),
   ].join('\n'));
-  const missing=[...new Set(expenses.flatMap(missingDetails))];
-  return '✓ Guardado\n'+lines.join('\n\n')+(missing.length?'\nFalta: '+missing.join(', '):'');
+  return '✓ Guardado\n'+lines.join('\n\n');
 }
 
-function recordButtons(ids,expenses,sheetId){
+function recordButtons(ids,expenses,sheetId,allowUndo=true){
   const keyboard=[[{text:'Ver hoja',url:'https://docs.google.com/spreadsheets/d/'+sheetId+'/edit'},{text:'Ver detalles',callback_data:'expense:details:'+ids[0]}]];
-  if(expenses.some(x=>missingDetails(x).length))keyboard.push([{text:'Completar datos',callback_data:'expense:complete:'+ids[0]},{text:'Más tarde',callback_data:'expense:later:'+ids[0]}]);
-  keyboard.push([{text:'Deshacer',callback_data:'expense:undo:'+ids[0]}]);
+  keyboard.push([{text:'Corregir',callback_data:(ids.length>1?'expense:edit-list:':'expense:edit:')+ids[0]}]);
+  if(allowUndo)keyboard.push([{text:'Deshacer',callback_data:'expense:undo:'+ids[0]}]);
   return {inline_keyboard:keyboard};
 }
 
-async function completionFromText(uid,chat,text,link,pending,env){
-  const {ids}=JSON.parse(pending.payload);
-  const access=await refreshAccess(link.google_refresh_token,env);
-  const all=await readExpenses(link.sheet_id,access);
-  const expenses=ids.map(id=>all.find(x=>x.id===id));
-  if(expenses.some(x=>!x))return send(chat,'Ese gasto ya no está en tu hoja.',env);
-  const result=await analyzeText('Completa solamente los datos complementarios de estos gastos, manteniendo el orden, montos, fechas y descripciones. Datos actuales: '+JSON.stringify(expenses)+'\nInformación adicional del usuario: '+text,profile(link,env),env,'Telegram');
-  if(result.question)return send(chat,result.question,env);
-  const updated=await completeExpenses(link.sheet_id,ids,result.expenses,access);
-  await env.DB.prepare('DELETE FROM pending WHERE telegram_user_id=?').bind(uid).run();
-  return send(chat,'Listo, actualicé los datos.\n'+shortReceipt(updated,env.BOT_LANGUAGE).replace('✓ Guardado\n',''),env,{inline_keyboard:[[{text:'Ver hoja',url:'https://docs.google.com/spreadsheets/d/'+link.sheet_id+'/edit'}]]});
+function correctionIntent(text){
+  return /^(eran? |no eran? |fue con |fue el |corrige|corregir|cambia|correccion|en realidad |me equivoque|it was |they were |actually |correct |change |paid with )/i.test(text.normalize('NFD').replace(/[\u0300-\u036f]/g,''));
+}
+async function chooseExpense(uid,chat,link,env,instructions='',ids=[]){
+  const all=await readExpenses(link.sheet_id,await refreshAccess(link.google_refresh_token,env));
+  const rows=ids.length?all.filter(x=>ids.includes(x.id)):all.slice(-8);
+  if(!rows.length)return send(chat,'Todavía no hay gastos en tu hoja. Envíame el primero.',env);
+  await env.DB.prepare('INSERT INTO pending VALUES(?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,expires_at=excluded.expires_at').bind(uid,'edit-select',JSON.stringify({instructions}),Date.now()+PENDING_TTL).run();
+  return send(chat,'¿Qué gasto quieres corregir? Estos son los últimos guardados.',env,{inline_keyboard:rows.slice().reverse().map(x=>[{text:(x.date+' · '+x.description+' · '+money(x.amount,x.currency)).slice(0,60),callback_data:'expense:edit:'+x.id}])});
+}
+async function beginEdit(uid,chat,id,link,env,instructions=''){
+  const rows=await readExpenses(link.sheet_id,await refreshAccess(link.google_refresh_token,env));
+  const expense=rows.find(x=>x.id===id);
+  if(!expense)return send(chat,'Ese gasto ya no está en tu hoja.',env);
+  const payload=JSON.stringify({id,instructions:''});
+  await env.DB.prepare('INSERT INTO pending VALUES(?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,expires_at=excluded.expires_at').bind(uid,'edit',payload,Date.now()+PENDING_TTL).run();
+  if(instructions)return editFromText(uid,chat,instructions,link,{payload},env);
+  return send(chat,shortReceipt([expense]).replace('✓ Guardado','Gasto elegido:')+'\n¿Qué quieres cambiar? Por ejemplo: «eran 15, no 50» o «fue con mi tarjeta RBC».',env,{inline_keyboard:[[{text:'Cancelar',callback_data:'edit:cancel'}]]});
+}
+async function editFromText(uid,chat,text,link,pending,env){
+  const payload=JSON.parse(pending.payload),access=await refreshAccess(link.google_refresh_token,env);
+  const original=(await readExpenses(link.sheet_id,access)).find(x=>x.id===payload.id);
+  if(!original)return send(chat,'Ese gasto ya no está en tu hoja.',env);
+  const instructions=[payload.instructions||'',text].filter(Boolean).join('\n');
+  const result=await analyzeText('CORREGIR_GASTO_EXISTENTE. Devuelve exactamente un gasto. Copia todos los datos actuales y cambia SOLO los campos que la persona pide corregir. No añadas gastos. No uses hoy ni la moneda del perfil para reemplazar una fecha o moneda ya guardada. Si la corrección es ambigua, pregunta. Gasto actual: '+JSON.stringify(original)+'\nCambio solicitado: '+instructions,profile(link,env),env,'Telegram');
+  if(result.question){
+    await env.DB.prepare('INSERT INTO pending VALUES(?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,expires_at=excluded.expires_at').bind(uid,'edit',JSON.stringify({...payload,instructions:instructions+'\nPregunta: '+result.question}),Date.now()+PENDING_TTL).run();
+    return send(chat,result.question,env);
+  }
+  if(result.expenses?.length!==1)return send(chat,'Corrijamos un gasto a la vez. Dime qué dato quieres cambiar.',env);
+  if(!result.changedFields?.length)return send(chat,'No identifiqué el cambio. Dime qué dato quieres corregir.',env);
+  const corrected={...original,...Object.fromEntries(result.changedFields.map(key=>[key,result.expenses[0][key]]))};
+  const lock=await env.DB.prepare("UPDATE pending SET kind='edit-saving' WHERE telegram_user_id=? AND kind='edit' AND payload=? AND expires_at>?").bind(uid,pending.payload,Date.now()).run();
+  if(lock.meta?.changes!==1)return send(chat,'Ese cambio ya se está guardando o venció. Revisa tu hoja antes de intentarlo otra vez.',env);
+  const updated=await correctExpense(link.sheet_id,payload.id,corrected,access,original);
+  await env.DB.prepare('INSERT INTO pending VALUES(?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,expires_at=excluded.expires_at').bind(uid,'last',JSON.stringify({ids:[updated.id]}),Date.now()+10*60*1000).run();
+  return send(chat,shortReceipt([updated]).replace('✓ Guardado','✓ Corregido'),env,recordButtons([updated.id],[updated],link.sheet_id,false));
 }
 
 async function saveClearExpenses(uid,chat,link,result,env,confirmed=false){
@@ -218,6 +241,11 @@ async function processAudio(uid,chat,message,link,env){
   await send(chat,'Escuchando tu audio…',env);
   const file=await mediaStep('file-download',()=>telegramFile(media.file_id,env,message.voice?'gasto.ogg':media.file_name||'gasto-audio',media.mime_type||(message.voice?'audio/ogg':'')));
   const result=await mediaStep('audio-analysis',()=>analyzeAudio(file,profile(link,env),env,message.caption||''));
+  if(correctionIntent(result.transcript||'')){
+    const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(uid).first();
+    const ids=pending&&['undo','last'].includes(pending.kind)&&Number(pending.expires_at)>Date.now()?JSON.parse(pending.payload).ids:[];
+    return ids?.length===1?beginEdit(uid,chat,ids[0],link,env,result.transcript):chooseExpense(uid,chat,link,env,result.transcript,ids);
+  }
   if(result.question){
     await rememberClarification(uid,{
       source:'Audio',
@@ -233,6 +261,33 @@ async function processAudio(uid,chat,message,link,env){
 
 async function handleCallback(cb,env){
   await call('answerCallbackQuery',{callback_query_id:cb.id},env).catch(()=>{});
+  if(cb.message?.chat?.type&&cb.message.chat.type!=='private')return;
+  if(cb.data?.startsWith('profile:')){
+    try{return await handleProfileCallback(cb,env,send);}catch(error){console.error('Profile failed',error);return send(String(cb.from.id),'No pude guardar el perfil. Inténtalo otra vez desde Ajustes.',env);}
+  }
+  if(cb.data==='edit:cancel'){
+    await env.DB.prepare("DELETE FROM pending WHERE telegram_user_id=? AND kind IN ('edit','edit-select')").bind(String(cb.from.id)).run();
+    return send(String(cb.from.id),'Cancelado. No cambié ese gasto.',env);
+  }
+  if(cb.data?.startsWith('expense:edit-list:')){
+    const uid=String(cb.from.id),chat=String(cb.message.chat.id);
+    try{
+      const link=await userLink(uid,env);if(!link)return send(chat,'Conecta Google con /link para continuar.',env);
+      const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(uid).first();
+      const ids=pending&&['undo','last'].includes(pending.kind)&&Number(pending.expires_at)>Date.now()?JSON.parse(pending.payload).ids:[];
+      return await chooseExpense(uid,chat,link,env,'',ids?.[0]===cb.data.slice('expense:edit-list:'.length)?ids:[]);
+    }catch(error){console.error('Correction list failed',error);return send(chat,'No pude abrir la lista. Inténtalo de nuevo.',env);}
+  }
+  if(cb.data?.startsWith('expense:edit:')||cb.data?.startsWith('expense:complete:')){
+    const uid=String(cb.from.id),chat=String(cb.message.chat.id);
+    try{
+      const link=await userLink(uid,env);if(!link)return send(chat,'Conecta Google con /link para continuar.',env);
+      const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(uid).first();
+      if(pending?.kind==='edit-saving'&&Number(pending.expires_at)>Date.now())return send(chat,'Ese cambio ya se está guardando o venció. Revisa tu hoja antes de intentarlo otra vez.',env);
+      const instructions=pending?.kind==='edit-select'&&Number(pending.expires_at)>Date.now()?JSON.parse(pending.payload).instructions:'';
+      return await beginEdit(uid,chat,cb.data.split(':').slice(2).join(':'),link,env,instructions);
+    }catch(error){console.error('Correction failed',error);return send(chat,'No pude confirmar el cambio. Revisa tu hoja antes de intentarlo otra vez.',env);}
+  }
   if(cb.data?.startsWith('expense:details:')){
     if(cb.message?.chat?.type&&cb.message.chat.type!=='private')return;
     const uid=String(cb.from.id),chat=String(cb.message?.chat?.id||cb.from.id);
@@ -272,7 +327,7 @@ async function handleCallback(cb,env){
     const language=cb.data.slice(9);
     if(!['es','en'].includes(language))return;
     await setLanguage(String(cb.from.id),language,env);
-    return send(String(cb.from.id),language==='en'?'Idioma: English.':'Idioma: Español.',{...env,BOT_LANGUAGE:language});
+    return send(String(cb.from.id),language==='en'?'Listo, hablaremos en inglés. Envíame un gasto cuando quieras.':'Listo, hablaremos en español. Envíame un gasto cuando quieras.',{...env,BOT_LANGUAGE:language});
   }
   if(cb.data?.startsWith('menu:')){
     const actions={currency:'💱 Moneda',language:'🌐 Idioma / Language',help:'❓ Ayuda'};
@@ -285,29 +340,7 @@ async function handleCallback(cb,env){
     await env.DB.prepare('UPDATE user_links SET currency=? WHERE telegram_user_id=?').bind(currency,String(cb.from.id)).run();
     return send(String(cb.from.id),'Moneda principal: '+currency+'. Si un gasto está en otra moneda, indícala al enviarlo.',env);
   }
-  if(cb.data?.startsWith('expense:complete:')||cb.data?.startsWith('expense:later:')){
-    const uid=String(cb.from.id),chat=String(cb.message?.chat?.id||cb.from.id);
-    if(cb.message?.chat?.type&&cb.message.chat.type!=='private')return;
-    if(cb.data.startsWith('expense:later:')){
-      await env.DB.prepare("DELETE FROM pending WHERE telegram_user_id=? AND kind='complete'").bind(uid).run();
-      return send(chat,'Listo, quedó guardado. Puedes retomarlo en Completar datos cuando quieras.',env);
-    }
-    try{
-      const link=await userLink(uid,env);
-      if(!link)return send(chat,'Conecta Google con /link para continuar.',env);
-      const id=cb.data.slice('expense:complete:'.length);
-      const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(uid).first();
-      let ids=[id];
-      if(pending?.kind==='undo'){const saved=JSON.parse(pending.payload);if(saved.ids?.[0]===id)ids=saved.ids;}
-      const access=await refreshAccess(link.google_refresh_token,env);
-      const all=await readExpenses(link.sheet_id,access);
-      const selected=ids.map(id=>all.find(x=>x.id===id));
-      if(selected.some(x=>!x))return send(chat,'Ese gasto ya no está en tu hoja.',env);
-      await env.DB.prepare('INSERT INTO pending VALUES(?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,expires_at=excluded.expires_at').bind(uid,'complete',JSON.stringify({ids}),Date.now()+PENDING_TTL).run();
-      const missing=[...new Set(selected.flatMap(missingDetails))];
-      return send(chat,'Falta: '+(missing.join(', ')||'puedes agregar notas o viaje/proyecto')+'.\nEscribe los datos. Ejemplo: «RBC crédito, único y variable».\nPara dejarlo para después, envía /cancelar.',env);
-    }catch(error){console.error('Completion setup failed',error);return send(chat,'No pude abrir ese gasto. Inténtalo de nuevo; no cambié nada.',env);}
-  }
+  if(cb.data?.startsWith('expense:later:'))return send(String(cb.from.id),'Tu gasto está guardado. Los datos extra son opcionales.',env);
   if(!cb.data?.startsWith('expense:undo:'))return;
   const uid=String(cb.from.id);
   const chat=String(cb.message?.chat?.id||cb.from.id);
@@ -353,15 +386,19 @@ export async function handleUpdate(update,env){
   }
 
   if(!link)return createLink(chat,uid,env);
+  if(/^\/perfil\b/i.test(text))return startProfile(chat,env,send);
 
   if (/^\/(help|ayuda)\b/i.test(text)||text==='❓ Ayuda')return send(chat,help,env);
   if (/^\/cancelar\b/i.test(text)){
-    await env.DB.prepare('DELETE FROM pending WHERE telegram_user_id=? AND kind IN (?,?,?)').bind(uid,'clarify','complete','import').run();
+    await env.DB.prepare("DELETE FROM pending WHERE telegram_user_id=? AND kind IN ('clarify','complete','import','edit','edit-select','profile')").bind(uid).run();
     return send(chat,'Listo, cancelado. Tus gastos guardados siguen en la hoja.',env);
   }
-  if(text==='🧾 Registrar gasto')return send(chat,'¿Qué gastaste?\nEjemplo: «Pagué 25 en supermercado con mi tarjeta RBC».\nTambién puedes enviar una foto o un audio.',env);
+  if(text==='🧾 Registrar gasto'){
+    await env.DB.prepare("DELETE FROM pending WHERE telegram_user_id=? AND kind IN ('clarify','complete','edit','edit-select','profile')").bind(uid).run();
+    return send(chat,'¿Qué gastaste?\nEjemplo: «Pagué 25 en supermercado con mi tarjeta RBC».\nTambién puedes enviar una foto o un audio.',env);
+  }
   if(text==='📥 Importar movimientos')return send(chat,'Envía una imagen o PDF con tus gastos. Te mostraré la lista antes de guardarla.\nHasta 25 gastos por envío.',env);
-  if(text==='⚙️ Ajustes')return send(chat,'¿Qué quieres ajustar?',env,{inline_keyboard:[[{text:'💱 Moneda',callback_data:'menu:currency'},{text:'🌐 Idioma / Language',callback_data:'menu:language'}],[{text:'❓ Ayuda',callback_data:'menu:help'}]]});
+  if(text==='⚙️ Ajustes')return send(chat,'¿Qué quieres ajustar?',env,{inline_keyboard:[[{text:'Mi perfil',callback_data:'profile:start'}],[{text:'💱 Moneda',callback_data:'menu:currency'},{text:'🌐 Idioma / Language',callback_data:'menu:language'}],[{text:'❓ Ayuda',callback_data:'menu:help'}]]});
   if(text==='💱 Moneda')return send(chat,'Moneda actual: '+link.currency+'. ¿Cuál prefieres usar?',env,{inline_keyboard:[['CAD','USD','NIO','EUR','GTQ','MXN'].map(currency=>({text:currency,callback_data:'currency:'+currency}))]});
   if (/^\/moneda\b/i.test(text)){
     const currency=text.split(/\s+/)[1]?.toUpperCase();
@@ -371,26 +408,35 @@ export async function handleUpdate(update,env){
   }
   const isReply=m.text&&!text.startsWith('/')&&!['📊 Este mes','🏷 Categorías','📄 Mi hoja','📝 Pendientes'].includes(text);
   const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(uid).first();
-  if(pending&&['undo','complete'].includes(pending.kind)&&/^(despues|completar despues|mas tarde|luego)$/i.test(text.normalize('NFD').replace(/[\u0300-\u036f]/g,''))){
-    await env.DB.prepare("DELETE FROM pending WHERE telegram_user_id=? AND kind='complete'").bind(uid).run();
-    return send(chat,'Listo, quedó guardado. Puedes retomarlo en Completar datos cuando quieras.',env);
+  if(pending?.kind==='profile'&&Number(pending.expires_at)>Date.now()&&isReply){
+    try{return await handleProfileText(uid,chat,text,pending,env,send);}catch(error){console.error('Profile text failed',error);return send(chat,'No pude guardar el perfil. Inténtalo otra vez desde Ajustes.',env);}
   }
-  if(pending?.kind==='complete'&&Number(pending.expires_at)>Date.now()&&!m.text)return send(chat,'Escribe los datos que faltan. Para dejarlo y anotar otro gasto, envía /cancelar.',env);
-  if(pending?.kind==='complete'&&Number(pending.expires_at)>Date.now()&&isReply){
-    try{return await completionFromText(uid,chat,text,link,pending,env);}catch(error){console.error('Completion failed',error);return send(chat,'No pude confirmar el cambio. Revisa tu hoja antes de intentarlo otra vez.',env);}
+  if(pending?.kind==='edit-saving'&&Number(pending.expires_at)>Date.now()&&isReply)return send(chat,'Ese cambio ya se está guardando o venció. Revisa tu hoja antes de intentarlo otra vez.',env);
+  if(pending?.kind==='edit'&&Number(pending.expires_at)>Date.now()&&isReply){
+    try{return await editFromText(uid,chat,text,link,pending,env);}catch(error){console.error('Correction failed',error);return send(chat,'No pude confirmar el cambio. Revisa tu hoja antes de intentarlo otra vez.',env);}
+  }
+  if(pending?.kind==='edit'&&Number(pending.expires_at)>Date.now()&&!m.text){
+    if(m.voice||m.audio){
+      try{
+        const media=m.voice||m.audio;
+        const file=await telegramFile(media.file_id,env,'gasto.ogg',media.mime_type||'audio/ogg');
+        return await editFromText(uid,chat,await transcribeAudio(file,env),link,pending,env);
+      }catch(error){console.error('Voice correction failed',error);return send(chat,'No pude confirmar el cambio. Revisa tu hoja antes de intentarlo otra vez.',env);}
+    }
+    return send(chat,'Escribe qué quieres cambiar. Para salir, envía /cancelar.',env);
+  }
+  if(m.text&&correctionIntent(text)&&pending?.kind!=='import'){
+    try{
+      const ids=pending&&['undo','last'].includes(pending.kind)&&Number(pending.expires_at)>Date.now()?JSON.parse(pending.payload).ids:[];
+      return ids?.length===1?await beginEdit(uid,chat,ids[0],link,env,text):await chooseExpense(uid,chat,link,env,text,ids);
+    }catch(error){console.error('Correction failed',error);return send(chat,'No pude confirmar el cambio. Revisa tu hoja antes de intentarlo otra vez.',env);}
   }
   if(pending?.kind==='import'&&!text.startsWith('/')&&!['📊 Este mes','🏷 Categorías','📄 Mi hoja','📝 Pendientes'].includes(text))return send(chat,'Primero elige Guardar gastos o Cancelar en la lista anterior.',env);
   if(pending&&pending.kind==='clarify'&&Number(pending.expires_at)>Date.now()&&isReply){
     try{return await handleClarification(uid,chat,text,link,pending,env);}catch(error){console.error('Clarification failed',error);return send(chat,'No pude terminar de guardarlo. Revisa tu hoja antes de enviarlo otra vez.',env);}
   }
-  if(/^\/pendientes\b/i.test(text)||text==='📝 Pendientes'){
-    try{
-      const access=await refreshAccess(link.google_refresh_token,env);
-      const rows=(await readExpenses(link.sheet_id,access)).filter(x=>missingDetails(x).length);
-      if(!rows.length)return send(chat,'¡Todo al día! No hay datos por completar.',env);
-      const selected=rows.slice(-8).reverse();
-      return send(chat,'Hay '+rows.length+' gastos con datos por completar. ¿Cuál quieres completar?',env,{inline_keyboard:selected.map(x=>[{text:(x.date+' · '+x.description+' · '+money(x.amount,x.currency)).slice(0,60),callback_data:'expense:complete:'+x.id}])});
-    }catch(error){console.error('Pending details failed',error);return send(chat,'No pude abrir la lista. Inténtalo de nuevo.',env);}
+  if(/^\/(pendientes|corregir)\b/i.test(text)||text==='📝 Pendientes'){
+    try{return await chooseExpense(uid,chat,link,env);}catch(error){console.error('Correction list failed',error);return send(chat,'No pude abrir la lista. Inténtalo de nuevo.',env);}
   }
   const kind=m.text?queryKind(text):'';
   if(kind){
@@ -434,6 +480,7 @@ export async function handleUpdate(update,env){
 }
 
 export async function saveGoogleLink(link,refreshToken,sheetId,env){
+  const previous=await env.DB.prepare('SELECT currency,timezone FROM user_links WHERE telegram_user_id=?').bind(link.telegram_user_id).first();
   const enc=await encrypt(refreshToken,env.TOKEN_ENCRYPTION_KEY);
   await env.DB.prepare(
     'INSERT INTO user_links(telegram_user_id,chat_id,google_refresh_token,sheet_id,currency,timezone,linked_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET chat_id=excluded.chat_id,google_refresh_token=excluded.google_refresh_token,sheet_id=excluded.sheet_id,linked_at=excluded.linked_at'
@@ -446,6 +493,10 @@ export async function saveGoogleLink(link,refreshToken,sheetId,env){
     env.DEFAULT_TIMEZONE||'America/Toronto',
     Date.now()
   ).run();
-  await send(link.chat_id,'¡Ya estás conectado! Envíame tu primer gasto por texto, foto o audio.',env).catch(error=>console.error('Link notification failed',error));
+  try{
+    const pref=await preferences(String(link.telegram_user_id),env);env={...env,BOT_LANGUAGE:pref.language};
+    await send(link.chat_id,previous?'¡Ya estás conectado! Envíame tu primer gasto por texto, foto o audio.':'¡Google conectado! Ajustemos tu moneda y la hora local.',env);
+    if(!previous)await startProfile(link.chat_id,env,send);
+  }catch(error){console.error('Link notification failed',error);}
 }
 

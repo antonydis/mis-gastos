@@ -1,3 +1,4 @@
+import {simplifySheet} from './worker/src/sheet-layout.js';
 import {EXPENSE_HEADERS,expenseToRow,rowToExpense} from './worker/src/records.js';
 const CONFIG = window.MIS_GASTOS_CONFIG || {};
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
@@ -738,13 +739,7 @@ async function createExpenseSheet() {
     method:"POST",
     body:JSON.stringify({
       properties:{title:"Mis gastos", locale:"es", timeZone:tz},
-      sheets:[
-        {properties:{title:"Movimientos"}},
-        {properties:{title:"Registro diario"}},
-        {properties:{title:"Categorías"}},
-        {properties:{title:"Resúmenes"}},
-        {properties:{title:"Configuración"}}
-      ]
+      sheets:[{properties:{title:"Movimientos"}}]
     })
   });
 
@@ -755,15 +750,12 @@ async function createExpenseSheet() {
     body:JSON.stringify({
       valueInputOption:"RAW",
       data:[
-        {range:"Movimientos!A1:Q1",values:[EXPENSE_HEADERS]},
-        {range:"'Registro diario'!A1:C1",values:[["Fecha","Estado","Registrado"]]},
-        {range:"'Categorías'!A1:C" + (CATEGORIES.length + 1),values:[["Categoría","Activa","Palabras clave"],...CATEGORIES.map((c) => [c,true,""])]},
-        {range:"'Resúmenes'!A1:J1",values:[["Periodo","Desde","Hasta","Total","Moneda","Mayor categoría","% mayor categoría","Variación %","Resumen","Generado"]]},
-        {range:"'Configuración'!A1:B4",values:[["Ajuste","Valor"],["Moneda principal",settings.currency],["Zona horaria",tz],["Versión","1"]]}
+        {range:"Movimientos!A1:Q1",values:[EXPENSE_HEADERS]}
       ]
     })
   });
 
+  await simplifySheet(id,googleFetch);
   await googleFetch(`https://www.googleapis.com/drive/v3/files/${id}?fields=id,name,webViewLink`, {
     method:"PATCH",
     body:JSON.stringify({appProperties:{mis_gastos:"v1"}})
@@ -789,7 +781,7 @@ async function ensureGoogleSheet() {
   const headerUrl=`https://sheets.googleapis.com/v4/spreadsheets/${file.id}/values/${encodeURIComponent('Movimientos!A1:Q1')}`;
   const header=(await googleFetch(headerUrl)).values?.[0]||[];
   if(header.slice(10).some((v,i)=>v&&v!==EXPENSE_HEADERS[i+10]))throw new Error('Las columnas adicionales no coinciden con Mis gastos. No modifiqué la hoja.');
-  if(header.length!==EXPENSE_HEADERS.length||header.some((v,i)=>v!==EXPENSE_HEADERS[i]))await googleFetch(headerUrl+'?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:[EXPENSE_HEADERS]})});
+  if(header.length!==EXPENSE_HEADERS.length||header.some((v,i)=>v!==EXPENSE_HEADERS[i])){await simplifySheet(file.id,googleFetch);await googleFetch(headerUrl+'?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:[EXPENSE_HEADERS]})});}
   state.sheetId = file.id;
   state.sheetUrl = file.webViewLink || `https://docs.google.com/spreadsheets/d/${file.id}/edit`;
   state.backend = "google";

@@ -38,8 +38,9 @@ globalThis.fetch=async(url,options={})=>{
  return Response.json({});
 };
 assert.equal((await ensureSheet('token',env)).id,'new-sheet');
-const initialization=googleCalls.find(x=>x.url.endsWith('/values:batchUpdate'));
-assert.ok(initialization.body.data.some(x=>x.range==="'Registro diario'!A1:C1"));
+const creation=googleCalls.find(x=>x.url==='https://sheets.googleapis.com/v4/spreadsheets');
+assert.deepEqual(creation.body.sheets.map(x=>x.properties.title),['Movimientos']);
+assert.ok(googleCalls.some(x=>x.url.includes('A1%3AQ1')&&x.body.values[0][5]==='Monto'));
 // Linked user: menu, real-sheet queries, reconnect, and async media errors.
 const link={google_refresh_token:await encrypt('refresh',key),sheet_id:'my-sheet',currency:'CAD',timezone:'America/Toronto'};
 const messages=[];const writes=[];

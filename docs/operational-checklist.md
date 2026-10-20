@@ -2,7 +2,7 @@
 
 ## Experiencia
 
-El bot ofrece bienvenida, conexión Google, menú Este mes/Categorías/Mi hoja/Ayuda/Moneda, registro por texto/foto/audio e imágenes o PDF adjuntos (máximo 8 MB). Excel todavía no se importa. Las consultas calculan el mes actual desde la hoja y separan monedas. Otros periodos no están implementados. La confirmación incluye el enlace a la hoja. Deshacer está vinculado al último registro durante diez minutos.
+El bot ofrece bienvenida, conexión Google, menú Este mes/Categorías/Mi hoja/Ayuda/Moneda, registro por texto/foto/audio e imágenes o PDF adjuntos (máximo 8 MB). Excel todavía no se importa. Las consultas calculan el mes actual desde la hoja y separan monedas. Otros periodos no están implementados. La confirmación ofrece Ver hoja, Ver detalles y Corregir. Los resúmenes incluyen conteo y avisos de datos excluidos o monedas sin convertir. Deshacer está vinculado al último registro durante diez minutos.
 
 ## Configuración de producción
 
@@ -29,6 +29,6 @@ La configuración canónica es `wrangler.jsonc` en la raíz. Los scripts de `wor
 
 CAD y America/Toronto son los valores iniciales; los perfiles anteriores se ajustan una sola vez, sin convertir sus gastos históricos. Idioma español/inglés en Ajustes. Las preferencias se crean automáticamente y su tabla figura en schema.sql.
 
-Las columnas complementarias se añaden a Movimientos al próximo registro o consulta. Pendientes permite completar la misma fila. Imágenes con múltiples gastos y PDFs necesitan confirmación; límite 25 gastos/8 MB. Ver testing-media.md para las pruebas de extractos y exclusiones.
+Al próximo registro o consulta se simplifica Movimientos a ocho columnas visibles, preservando columnas históricas ocultas. Solo se retiran pestañas que coincidan con plantillas sin personalizar. Corregir modifica la misma fila, por texto o audio. /perfil cambia moneda y ciudad; se ofrece también al conectar una cuenta nueva. Los campos complementarios son opcionales y no generan pendientes. Imágenes con múltiples gastos y PDFs necesitan confirmación; límite 25 gastos/8 MB. Ver testing-media.md para las pruebas de extractos y exclusiones.
 
 El cron horario configurado en wrangler.jsonc limpia estados temporales vencidos. Los estados de importación contienen datos financieros temporales hasta confirmación o limpieza; no son un historial permanente.

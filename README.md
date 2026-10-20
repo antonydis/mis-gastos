@@ -15,15 +15,14 @@ La primera interacción con esta versión migra los antiguos valores de perfil d
 
 Bot: https://t.me/missgastosya_bot
 
-1. Enviar `/start` y conectar Google una vez. El acceso está limitado a archivos de la aplicación (`drive.file`).
-2. Enviar texto, una foto de un recibo o un audio, sin comandos especiales.
-3. El bot pregunta si falta un monto o una descripción que permita identificar el gasto.
-4. Un gasto individual claro se guarda y se confirma con todos los campos capturados y un enlace a la hoja.
-5. La confirmación muestra monto, fecha, categoría y pago si está disponible. Ver detalles abre la información completa desde la hoja; Ver hoja abre el documento.
-6. Los datos complementarios pueden quedar pendientes: Completar datos / Más tarde.
-7. Completar datos permite retomar un registro; completar modifica la misma fila sin duplicarla. La respuesta para completar datos es por texto.
+1. Enviar `/start` y conectar Google. El acceso está limitado a archivos de la aplicación (`drive.file`).
+2. Al conectar una cuenta nueva se ofrece país, ciudad y moneda habitual, con un atajo Montreal/CAD. El país propone la moneda; se puede cambiar. Se confirma el idioma. Es opcional: enviar un gasto directamente usa los valores iniciales.
+3. Enviar texto, una foto o un audio, sin comandos. Solo se pregunta cuando falta monto, descripción o hay una ambigüedad esencial. Sin fecha se usa hoy en la zona del perfil; sin moneda se usa la del perfil.
+4. La confirmación muestra monto, fecha, categoría y pago si se indicó. Ver detalles consulta los datos actuales de la hoja. Los datos complementarios no generan avisos de pendiente ni preguntas.
+5. Corregir permite actualizar monto, moneda, fecha, descripción, comercio, categoría, pago o notas, en la misma fila. Se responde por texto o audio. Después de un gasto individual reciente también se reconoce «eran 15, no 50» o «fue con mi tarjeta RBC». En un lote o sin contexto reciente se elige el gasto. La corrección reciente tiene diez minutos de contexto; el botón del gasto y el menú funcionan después consultando el Sheet.
+6. Las correcciones conservan el ID, origen y fecha de registro. Si cambia el monto o moneda de un gasto extranjero se descarta un equivalente CAD antiguo. Si falta el ID, está repetido o el registro cambió durante el análisis no se sobrescribe. Deshacer elimina el registro original, no restaura una versión anterior de una corrección; por eso la confirmación corregida no ofrece Deshacer.
 
-Menú principal: Registrar gasto, Varios gastos, Este mes, Por categoría, Completar datos, Ver mi hoja y Ajustes. Moneda, idioma y ayuda están en Ajustes. También funcionan `/pendientes`, `/idioma`, `/moneda`, `/cancelar` y `/link`.
+Menú: Registrar gasto, Varios gastos, Este mes, Por categoría, Corregir gasto, Ver mi hoja y Ajustes. Perfil, moneda, idioma y ayuda están en Ajustes. `/perfil` configura la ubicación; `/corregir` permite elegir entre los últimos ocho gastos. Los botones viejos y `/pendientes` siguen funcionando como acceso a corrección. `/cancelar` abandona preguntas o cambios sin borrar gastos. `/link` vuelve a autorizar Google sin cambiar un perfil existente.
 
 ## Importar varios movimientos
 
@@ -42,15 +41,17 @@ La extracción de extractos está configurada para omitir ingresos, reembolsos, 
 
 ## Columnas de Movimientos
 
-Las primeras diez columnas mantienen sus posiciones para conservar la compatibilidad con registros existentes. Se añaden columnas al siguiente registro o consulta, sin mover los datos anteriores:
+La vista cotidiana tiene ocho columnas: **Fecha, Descripción, Comercio, Categoría, Monto, Moneda, Pago y Notas**. Pago, comercio y notas son opcionales. Se fija el encabezado, se ajustan los anchos y se añade un filtro.
 
-ID, Fecha, Descripción, Comercio, Categoría, Monto original, Moneda, Método de pago, Fuente, Registrado, Frecuencia, Tipo (Fijo/Variable), Notas, Viaje/proyecto, Monto CAD, Estado y Datos pendientes.
+Para no desplazar ni perder datos anteriores, el formato físico A:Q se mantiene. ID, Fuente, Registrado, Monto CAD y las antiguas columnas de frecuencia, tipo, viaje, estado y pendientes quedan ocultos. La extracción nueva ya no solicita frecuencia ni fijo/variable; el viaje o proyecto mencionado va en Notas. Los valores históricos de columnas ocultas se conservan. No hay que borrar columnas manualmente.
 
-El método de pago conserva el banco y tipo de tarjeta indicados; nunca se necesita un número completo de tarjeta. Monto CAD es igual al monto original para CAD. Para otras monedas queda vacío salvo que la persona proporcione un equivalente o una tasa explícita. No se asignan detalles ausentes a los registros antiguos.
+Las hojas nuevas contienen solo Movimientos. Las existentes se simplifican al siguiente registro o consulta. Registro diario y Resúmenes eran plantillas sin contenido generado por el bot; se retiran únicamente si siguen vacías o con sus encabezados originales. Categorías y Configuración tampoco alimentaban el bot: se retiran solo si coinciden con las plantillas iniciales sin personalizar. Una pestaña modificada se conserva.
+
+El método de pago conserva el banco y tipo de tarjeta indicados; nunca se necesita un número completo. Monto CAD queda vacío para otra moneda salvo que se proporcione un equivalente o tasa explícita. No se inventa una conversión.
 
 ## Consultas
 
-Este mes y Categorías leen el Sheet real y calculan sus resultados mediante código. Las monedas se muestran separadas. Otros periodos y consultas arbitrarias aún no están implementados. La interfaz y las confirmaciones del bot están en español e inglés; las categorías y encabezados de Sheets mantienen su estructura canónica en español.
+Este mes y Por categoría leen el Sheet real y calculan sus resultados mediante código. Incluyen total, número de gastos y categoría principal por moneda. Las monedas se muestran separadas, sin sumarlas. Se avisa de conversiones ausentes, gastos en Otros incluidos, filas del mes con monto/moneda inválidos excluidas y filas sin fecha que no pueden asignarse a un mes. Otros periodos y consultas arbitrarias aún no están implementados. La interfaz y las confirmaciones del bot están en español e inglés; las categorías y encabezados de Sheets mantienen su estructura canónica en español.
 
 ## Web
 
@@ -72,13 +73,13 @@ Ver [puesta en marcha](docs/operational-checklist.md) y [despliegue](docs/cloudf
 
 ## Datos y límites
 
-D1 conserva el vínculo Telegram/Google/Sheet, el refresh token cifrado, preferencias y estados temporales de aclaración/importación. Las importaciones pendientes contienen temporalmente los datos estructurados para poder confirmarlas. Esos estados vencen en 30 minutos y una limpieza programada elimina los vencidos cada hora. Los archivos originales no se archivan en el servidor. Los movimientos definitivos viven en el Sheet del usuario.
+D1 conserva el vínculo Telegram/Google/Sheet, el refresh token cifrado, preferencias y estados temporales de aclaración, corrección, configuración e importación. Las importaciones pendientes contienen temporalmente los datos estructurados para poder confirmarlas. Esos estados vencen en 30 minutos y una limpieza programada elimina los vencidos cada hora. Los archivos originales no se archivan en el servidor. Los movimientos definitivos viven en el Sheet del usuario.
 
 `TOKEN_ENCRYPTION_KEY` debe decodificar a 32 bytes. Cambiar una clave en uso exige reconectar las cuentas. Los secrets se configuran en Cloudflare y nunca se guardan en GitHub.
 
 ## Validación
 
-`npm test` cubre contratos, CORS, OAuth, formatos de medios de Telegram, fechas, zonas horarias, monedas, columnas, conservación de filas antiguas, completar sin duplicar, importación con confirmación/cancelación y español/inglés, con servicios simulados. Los permisos reales de Google y la extracción de archivos concretos requieren pruebas de extremo a extremo.
+`npm test` cubre contratos, CORS, OAuth, formatos de medios de Telegram, fechas, zonas horarias, monedas, columnas, conservación de filas antiguas, corrección por texto/audio sin duplicar, configuración del perfil y simplificación de la vista sin mover datos, importación con confirmación/cancelación y español/inglés, con servicios simulados. Los permisos reales de Google y la extracción de archivos concretos requieren pruebas de extremo a extremo.
 
 ## Repositorio privado
 

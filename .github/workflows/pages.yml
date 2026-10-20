@@ -25,19 +25,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check JavaScript
-        run: node --check app.js && node --check config.js && node --check sw.js && node --check worker/src/index.js && node --check worker/src/utils.js && node --check worker/src/google.js && node --check worker/src/telegram.js && node --check worker/src/model.js && node --check worker/src/openai.js
+        run: npm run check
 
-      - name: Run media pipeline tests
-        run: node tests/media-pipeline.test.mjs
-
-      - name: Run Telegram flow tests
-        run: node tests/telegram-flow.test.mjs
-
-      - name: Run operational tests
-        run: node tests/operational.test.mjs
-
-      - name: Run rich records tests
-        run: node tests/records.test.mjs
+      - name: Run automated tests
+        run: npm test
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -50,4 +41,3 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
-

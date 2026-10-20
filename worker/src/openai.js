@@ -20,22 +20,20 @@ const expenseSchema = {
           amount: { type: "number" },
           currency: { type: "string", enum: ["NIO", "USD", "CAD", "EUR", "GTQ", "MXN"] },
           paymentMethod: { type: "string" },
-          frequency: { type: "string" },
-          expenseType: { type: "string", enum: ["", "Fijo", "Variable"] },
           notes: { type: "string" },
-          project: { type: "string" },
           amountCAD: { type: ["number","null"] }
         },
-        required: ["date","description","merchant","category","amount","currency","paymentMethod","frequency","expenseType","notes","project","amountCAD"]
+        required: ["date","description","merchant","category","amount","currency","paymentMethod","notes","amountCAD"]
       }
     },
+    changedFields: {type:"array",items:{type:"string",enum:["date","description","merchant","category","amount","currency","paymentMethod","notes"]}},
     question: { type: "string" },
     documentType: { type: "string", enum: ["expense","receipts","statement"] },
     excludedCount: { type: "integer" },
     reviewNotes: { type: "string" },
     totalExpenseCount: { type: "integer" }
   },
-  required: ["expenses","question","documentType","excludedCount","reviewNotes","totalExpenseCount"]
+  required: ["expenses","changedFields","question","documentType","excludedCount","reviewNotes","totalExpenseCount"]
 };
 
 function authHeaders(env) {
@@ -68,17 +66,16 @@ async function structuredExpenseFromContent(content, profile, env, source) {
     "excludedCount: número de movimientos excluidos. reviewNotes: explica brevemente qué clases de movimientos se omitieron, en el idioma del perfil; no incluyas números de cuenta ni números completos de tarjetas. totalExpenseCount: número total de gastos elegibles visibles, antes de limitar la salida.",
     "Máximo 25 gastos por importación. Si hay más, devuelve expenses=[] y question pide dividir el documento en secciones de hasta 25 gastos. Nunca importes solo una parte sin avisar.",
     "Si contiene varios gastos independientes, extrae una fila por gasto. En un recibo usa el total pagado; no dupliques sus productos como otros gastos. En un documento con varios recibos usa un gasto por recibo. No incluyas totales agregados como gastos adicionales.",
-    "No inventes montos, comercios, fechas ni métodos de pago.",
-    "Los datos complementarios pueden quedar vacíos: no los inventes ni hagas preguntas por ellos en question. La aplicación ofrecerá completarlos después.",
+    "No inventes montos, comercios ni métodos de pago. Si no se indica fecha, usa hoy en la zona del perfil; no preguntes por la fecha.",
+    "Los datos complementarios pueden quedar vacíos: no los inventes ni hagas preguntas por ellos en question. No hacen falta para registrar el gasto. Nunca preguntes por comercio, pago, frecuencia, tipo, notas o proyecto.",
     "Conserva en paymentMethod el banco, tarjeta crédito/débito o efectivo mencionado. Como máximo conserva los últimos cuatro dígitos; nunca números completos de tarjeta.",
-    "frequency: Único, Semanal, Cada 15 días, Mensual, Anual u otra frecuencia explícita. Usa Único cuando el contexto describa claramente una compra puntual.",
-    "expenseType: Fijo o Variable si el contexto lo permite; una compra puntual como café o gasolina es Variable. No inventes recurrencias.",
-    "notes: detalles útiles, qué se compró, para quién, observaciones. project: nombre del viaje o proyecto solo si aparece; no lo deduzcas de la ciudad.",
+    
+    "notes: detalles útiles, qué se compró, para quién, observaciones y viaje o proyecto si se menciona.",
     "amountCAD: mismo monto si la moneda es CAD. Para otras monedas, solo si el usuario da el equivalente o una tasa explícita; en otro caso null. No inventes tipos de cambio.",
-    "Al completar datos de gastos existentes conserva el orden y devuelve exactamente un elemento por cada gasto original; no agregues gastos.",
+    "Para CORREGIR_GASTO_EXISTENTE devuelve un solo gasto y changedFields con SOLO los nombres de los campos que la persona pide cambiar (date, description, merchant, category, amount, currency, paymentMethod, notes). Conserva el resto. Para un gasto nuevo changedFields=[]. No confundas una corrección con una nueva compra.",
     "Si la moneda está explícita, respétala.",
     "Si la moneda no está mencionada y no hay conflicto, usa la moneda principal del perfil.",
-    "Los usuarios están en Montreal. $ o dólares sin calificativo usan la moneda del perfil (CAD por defecto). Respeta USD, dólares estadounidenses, GTQ, MXN o cualquier moneda explícita. Solo pregunta si el contexto contradice la moneda por defecto.",
+    "Usa la zona horaria y moneda del perfil. $ o dólares sin calificativo usan la moneda del perfil (CAD por defecto). Respeta USD, dólares estadounidenses, GTQ, MXN o cualquier moneda explícita. Solo pregunta si el contexto contradice la moneda por defecto.",
     "Si falta un monto o hay una ambigüedad que impediría guardar correctamente, devuelve una sola pregunta breve en question.",
     source === "Foto"
       ? "La imagen es un recibo. Identifica el TOTAL PAGADO, no subtotal, impuesto, propina sugerida, cambio, saldo previo ni números de autorización. Extrae el comercio y la fecha cuando sean visibles."
@@ -133,10 +130,7 @@ async function structuredExpenseFromContent(content, profile, env, source) {
       amount: Number(x.amount),
       currency: ["NIO","USD","CAD","EUR","GTQ","MXN"].includes(x.currency) ? x.currency : (profile.currency || "CAD"),
       paymentMethod: String(x.paymentMethod || "").trim().slice(0,50),
-      frequency:String(x.frequency||'').trim().slice(0,60),
-      expenseType:['Fijo','Variable'].includes(x.expenseType)?x.expenseType:'',
       notes:String(x.notes||'').trim().slice(0,500),
-      project:String(x.project||'').trim().slice(0,120),
       amountCAD:x.currency==='CAD'?Number(x.amount):(x.amountCAD!=null&&Number.isFinite(Number(x.amountCAD))&&Number(x.amountCAD)>0?Number(x.amountCAD):null),
       source
     }))
@@ -150,8 +144,9 @@ async function structuredExpenseFromContent(content, profile, env, source) {
     parsed.question=profile.language==='en'?'Please split the document into sections of up to 25 expenses so we can review all of them.':'Divide el documento en secciones de hasta 25 gastos para poder revisarlos todos.';
   }
   if(!parsed.question&&Number(parsed.totalExpenseCount)>parsed.expenses.length){parsed.expenses=[];parsed.question=profile.language==='en'?'Some transactions could not be read. Send a clearer image or a smaller section.':'No pude leer todos los movimientos. Envía una imagen más clara o una sección más pequeña.';}
+  parsed.changedFields=Array.isArray(parsed.changedFields)?parsed.changedFields.filter(key=>['date','description','merchant','category','amount','currency','paymentMethod','notes'].includes(key)):[];
   parsed.question = String(parsed.question || "").trim().slice(0,180);
-  if(!parsed.question&&parsed.expenses.some(x=>!x.description||/^gasto$/i.test(x.description)))parsed.question='¿Qué compraste o para qué fue ese gasto?';
+  if(!parsed.question&&parsed.expenses.some(x=>!x.description||/^gasto$/i.test(x.description)))parsed.question=profile.language==='en'?'What did you buy or what was this expense for?':'¿Qué compraste o para qué fue ese gasto?';
   return parsed;
 }
 
