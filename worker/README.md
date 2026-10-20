@@ -7,7 +7,7 @@ Cloudflare Worker + D1. Configuración canónica: `../wrangler.jsonc`.
 - Telegram: texto, fotos, audio e imágenes/PDF adjuntos; CAD y Montreal por defecto.
 - Español e inglés seleccionables en Ajustes.
 - Cada usuario autoriza Google y utiliza su propio Sheet.
-- Hoja con ocho columnas visibles; metadatos y columnas antiguas ocultos para conservar los datos. Nuevas hojas con una sola pestaña.
+- Hoja con ocho columnas visibles; metadatos y columnas antiguas ocultos para conservar los datos. Nuevas hojas con Movimientos y Resumen.
 - Las consultas calculan total, cantidad y categoría principal del mes desde Sheets; no se mezclan monedas y se indican datos que afecten el cálculo.
 - Corregir por texto/audio actualiza la misma fila. Los datos opcionales no producen preguntas ni pendientes.
 - Primera conexión: confirmar moneda y hora local; cambiar solo si hace falta. Sin país ni preguntas personales. Idioma desde Ajustes.
@@ -39,3 +39,5 @@ Ver [README principal](../README.md) y [puesta en marcha](../docs/operational-ch
 Los mensajes de Telegram son breves en español e inglés. La confirmación resume el gasto y ofrece Ver hoja, Ver detalles, Corregir y Deshacer según corresponda. Ver detalles vuelve a leer el Sheet; no conserva una copia de los gastos. Los botones antiguos del menú siguen funcionando.
 
 El cron corre cada cinco minutos para recordatorios y conserva la limpieza horaria de estados vencidos. Los envíos usan la zona horaria del usuario y una reserva SQL atómica, con un máximo diario salvo posposición explícita. Se omite el día si ya se guardó un gasto de hoy o se marcó revisado. Ante un resultado de red incierto no se reintenta el aviso ese día.
+
+Resumen incluye tablas y gráficas nativas por semana (lunes a domingo) y mes, con moneda seleccionable en B3. Las fórmulas siguen las ediciones y eliminaciones de Movimientos. sheet-summary.js comparte la creación entre web y bot; usa metadatos para evitar duplicar o sobrescribir pestañas personales.

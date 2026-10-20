@@ -57,9 +57,17 @@ La vista cotidiana tiene ocho columnas: **Fecha, Descripción, Comercio, Categor
 
 Para no desplazar ni perder datos anteriores, el formato físico A:Q se mantiene. ID, Fuente, Registrado, Monto CAD y las antiguas columnas de frecuencia, tipo, viaje, estado y pendientes quedan ocultos. La extracción nueva ya no solicita frecuencia ni fijo/variable; el viaje o proyecto mencionado va en Notas. Los valores históricos de columnas ocultas se conservan. No hay que borrar columnas manualmente.
 
-Las hojas nuevas contienen solo Movimientos. Las existentes se simplifican al siguiente registro o consulta. Registro diario y Resúmenes eran plantillas sin contenido generado por el bot; se retiran únicamente si siguen vacías o con sus encabezados originales. Categorías y Configuración tampoco alimentaban el bot: se retiran solo si coinciden con las plantillas iniciales sin personalizar. Una pestaña modificada se conserva.
+Las hojas nuevas contienen Movimientos y Resumen. Las existentes se simplifican al siguiente registro o consulta. Registro diario y la antigua Resúmenes (plural) eran plantillas sin contenido generado por el bot; se retiran únicamente si siguen vacías o con sus encabezados originales. Categorías y Configuración tampoco alimentaban el bot: se retiran solo si coinciden con las plantillas iniciales sin personalizar. Una pestaña modificada se conserva.
 
 El método de pago conserva el banco y tipo de tarjeta indicados; nunca se necesita un número completo. Monto CAD queda vacío para otra moneda salvo que se proporcione un equivalente o tasa explícita. No se inventa una conversión.
+
+## Tablas y gráficas en Google Sheets
+
+La pestaña **Resumen** (singular) muestra dos gráficas de columnas y tablas de total/número de gastos por semana y mes. La semana empieza el lunes; los meses conservan el año. El selector B3 elige moneda, con CAD inicial. Los montos originales se mantienen separados; no se utiliza una conversión supuesta.
+
+Las fórmulas nativas leen Movimientos con rangos abiertos: al registrar, corregir o borrar gastos se recalculan las tablas y gráficas sin pedir un informe al bot. Se normalizan fechas ISO en texto y fechas numéricas de Sheets. Se excluyen fechas vacías/ilegibles y montos no numéricos o no positivos. Si no hay gastos válidos para la moneda elegida, se indica Sin gastos con total y cantidad cero solo en el resumen; no se crean movimientos.
+
+El bot prepara esta pestaña en hojas existentes al consultar o guardar; la web comparte el mismo código. Su creación es idempotente, se amplía el espacio de cálculo cuando crece la hoja, y no se sobrescriben pestañas personales con el mismo nombre. Solo se añaden las gráficas tras leer la salida numérica de las fórmulas, porque Sheets puede descartar una serie aún vacía durante la creación. Si preparar el resumen falla, el registro del gasto puede seguir funcionando.
 
 ## Consultas
 

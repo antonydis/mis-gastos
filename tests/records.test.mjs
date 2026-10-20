@@ -49,7 +49,7 @@ globalThis.fetch=async(url,options={})=>{
  }
  if(url.includes('sheets.googleapis.com')){
   const decoded=decodeURIComponent(url);
-  if(decoded.includes('?fields=sheets(properties)'))return Response.json({sheets:[]});
+  if(decoded.includes('?fields='))return Response.json({sheets:[]});
   if(decoded.includes('Movimientos!A1:Q1')){
    if(options.method==='PUT')headers=body.values[0];
    return Response.json({values:[headers]});

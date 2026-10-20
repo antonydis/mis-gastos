@@ -1,3 +1,4 @@
+import {ensureSummarySheet} from './sheet-summary.js';
 import {simplifySheet} from './sheet-layout.js';
 import {EXPENSE_HEADERS,expenseToRow,rowToExpense} from './records.js';
 import {CATEGORIES,uid} from './utils.js';
@@ -9,6 +10,10 @@ export async function exchangeCode(code,env){return token({code,client_id:env.GO
 export async function refreshAccess(refresh,env){const x=await token({client_id:env.GOOGLE_CLIENT_ID,client_secret:env.GOOGLE_CLIENT_SECRET,refresh_token:refresh,grant_type:'refresh_token'});return x.access_token}
 async function token(values){const r=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(values)});const d=await r.json();if(!r.ok){const error=new Error(d.error_description||'Google OAuth failed');error.oauthCode=d.error;throw error;}return d}
 async function g(url,access,options={}){const r=await fetch(url,{...options,headers:{Authorization:'Bearer '+access,'Content-Type':'application/json',...(options.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok){const error=new Error(d.error?.message||'Google API failed');error.googleService=new URL(url).hostname.includes('sheets')?'sheets':'drive';error.googleReason=d.error?.details?.find(x=>x.reason)?.reason||d.error?.errors?.[0]?.reason;error.httpStatus=r.status;throw error;}return d}
+async function prepareSummary(sheetId,access){
+  try{await ensureSummarySheet(sheetId,(url,options)=>g(url,access,options));}
+  catch(error){console.error('Sheet summary setup failed',error);}
+}
 export async function ensureSheet(access,env){
   const q="appProperties has { key='mis_gastos' and value='v1' } and trashed=false";
   const f=await g('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&spaces=drive&fields=files(id,name,webViewLink)&pageSize=10',access);
@@ -18,6 +23,7 @@ export async function ensureSheet(access,env){
   const id=c.spreadsheetId;
   await simplifySheet(id,(url,options)=>g(url,access,options));
   await g('https://sheets.googleapis.com/v4/spreadsheets/'+id+'/values/'+encodeURIComponent('Movimientos!A1:Q1')+'?valueInputOption=RAW',access,{method:'PUT',body:JSON.stringify({values:[EXPENSE_HEADERS]})});
+  await prepareSummary(id,access);
   await g('https://www.googleapis.com/drive/v3/files/'+id+'?fields=id,name,webViewLink',access,{method:'PATCH',body:JSON.stringify({appProperties:{mis_gastos:'v1'}})});
   return{id,name:'Mis gastos',webViewLink:'https://docs.google.com/spreadsheets/d/'+id+'/edit'};
 }
@@ -28,6 +34,7 @@ export async function appendExpenses(sheetId,items,access){
   const rows=items.map((x,i)=>expenseToRow({...x,id:ids[i]}));
   const range=encodeURIComponent('Movimientos!A:Q');
   await g('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+range+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',access,{method:'POST',body:JSON.stringify({values:rows})});
+  await prepareSummary(sheetId,access);
   return ids;
 }
 
@@ -49,11 +56,12 @@ export async function ensureExpenseColumns(sheetId,access){
   const url='https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/';
   const existing=await g(url+encodeURIComponent('Movimientos!A1:Q1'),access);
   const header=existing.values?.[0]||[];
-  if(header.length===EXPENSE_HEADERS.length&&header.every((v,i)=>v===EXPENSE_HEADERS[i]))return;
+  if(header.length===EXPENSE_HEADERS.length&&header.every((v,i)=>v===EXPENSE_HEADERS[i])){await prepareSummary(sheetId,access);return;}
   // First ten columns keep their positions. Never move existing financial data.
   if(header.slice(10).some((v,i)=>v&&v!==EXPENSE_HEADERS[i+10]))throw new Error('Las columnas adicionales no coinciden con Mis gastos. No se modificó la hoja.');
   await simplifySheet(sheetId,(url,options)=>g(url,access,options));
   await g(url+encodeURIComponent('Movimientos!A1:Q1')+'?valueInputOption=RAW',access,{method:'PUT',body:JSON.stringify({values:[EXPENSE_HEADERS]})});
+  await prepareSummary(sheetId,access);
 }
 
 export async function readExpenses(sheetId,access){

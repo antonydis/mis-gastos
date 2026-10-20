@@ -34,3 +34,5 @@ Al próximo registro o consulta se simplifica Movimientos a ocho columnas visibl
 El cron de wrangler.jsonc corre cada cinco minutos para entregar avisos, y una vez por hora limpia estados temporales vencidos. Los estados de importación contienen datos financieros temporales hasta confirmación o limpieza; no son un historial permanente.
 
 Los avisos requieren aceptación desde el onboarding o Ajustes → Recordatorios (/recordatorios). La tabla reminder_settings se crea automáticamente; no hay que ejecutar una migración manual para instalaciones existentes. Verificar en Cloudflare que el trigger */5 * * * * quedó activo después del despliegue. Probar con dos zonas horarias y con un aviso futuro; no se promete precisión menor de cinco minutos.
+
+Al consultar o guardar se prepara Resumen con tablas/gráficas semanales y mensuales. El selector B3 mantiene las monedas separadas. La antigua plantilla Resúmenes no es la nueva pestaña funcional. No hace falta un secret ni una migración de D1 para esta función.

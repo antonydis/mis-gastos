@@ -1,3 +1,4 @@
+import {ensureSummarySheet} from './worker/src/sheet-summary.js';
 import {simplifySheet} from './worker/src/sheet-layout.js';
 import {EXPENSE_HEADERS,expenseToRow,rowToExpense} from './worker/src/records.js';
 const CONFIG = window.MIS_GASTOS_CONFIG || {};
@@ -771,6 +772,7 @@ async function syncLocalToGoogle() {
     `https://sheets.googleapis.com/v4/spreadsheets/${state.sheetId}/values/${range}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {method:"POST", body:JSON.stringify({values:pending.map(objectToSheetRow)})}
   );
+  await ensureSummarySheet(state.sheetId,googleFetch).catch(error=>console.warn('Sheet summary setup failed',error));
   localStorage.removeItem(STORAGE_KEY);
   return pending.length;
 }
@@ -782,6 +784,7 @@ async function ensureGoogleSheet() {
   const header=(await googleFetch(headerUrl)).values?.[0]||[];
   if(header.slice(10).some((v,i)=>v&&v!==EXPENSE_HEADERS[i+10]))throw new Error('Las columnas adicionales no coinciden con Mis gastos. No modifiqué la hoja.');
   if(header.length!==EXPENSE_HEADERS.length||header.some((v,i)=>v!==EXPENSE_HEADERS[i])){await simplifySheet(file.id,googleFetch);await googleFetch(headerUrl+'?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:[EXPENSE_HEADERS]})});}
+  await ensureSummarySheet(file.id,googleFetch).catch(error=>console.warn('Sheet summary setup failed',error));
   state.sheetId = file.id;
   state.sheetUrl = file.webViewLink || `https://docs.google.com/spreadsheets/d/${file.id}/edit`;
   state.backend = "google";
@@ -815,6 +818,7 @@ async function appendRows(rows) {
     `https://sheets.googleapis.com/v4/spreadsheets/${state.sheetId}/values/${range}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {method:"POST", body:JSON.stringify({values:rows.map(objectToSheetRow)})}
   );
+  await ensureSummarySheet(state.sheetId,googleFetch).catch(error=>console.warn('Sheet summary setup failed',error));
 }
 
 function monthKey(date = new Date()) {
@@ -1137,7 +1141,8 @@ async function init() {
       return;
     }
     if (confirm("¿Borrar todos los movimientos de prueba de este dispositivo?")) {
-      localStorage.removeItem(STORAGE_KEY);
+      await ensureSummarySheet(state.sheetId,googleFetch).catch(error=>console.warn('Sheet summary setup failed',error));
+  localStorage.removeItem(STORAGE_KEY);
       state.rows = [];
       renderDashboard();
       setStatus("Prueba local borrada.");
