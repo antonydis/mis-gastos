@@ -55,6 +55,8 @@ La extracción de extractos está configurada para omitir ingresos, reembolsos, 
 
 La vista cotidiana tiene ocho columnas: **Fecha, Descripción, Comercio, Categoría, Monto, Moneda, Pago y Notas**. Pago, comercio y notas son opcionales. Se fija el encabezado, se ajustan los anchos y se añade un filtro.
 
+Los montos se muestran con dos decimales. Categoría y moneda ofrecen opciones; los montos no positivos y las opciones diferentes generan una advertencia sin bloquear datos históricos. Una fila representa un gasto, no una transferencia entre cuentas ni el pago de una tarjeta que repita compras ya registradas. El resumen muestra únicamente gastos registrados: no calcula saldo disponible, ingresos, ahorro ni patrimonio. Para cerrar un mes, revisar los movimientos contra los recibos y extractos, las fechas, monedas y posibles duplicados. Un comercio o pago sin indicar no invalida un gasto.
+
 Para no desplazar ni perder datos anteriores, el formato físico A:Q se mantiene. ID, Fuente, Registrado, Monto CAD y las antiguas columnas de frecuencia, tipo, viaje, estado y pendientes quedan ocultos. La extracción nueva ya no solicita frecuencia ni fijo/variable; el viaje o proyecto mencionado va en Notas. Los valores históricos de columnas ocultas se conservan. No hay que borrar columnas manualmente.
 
 Las hojas nuevas contienen Movimientos y Resumen. Las existentes se simplifican al siguiente registro o consulta. Registro diario y la antigua Resúmenes (plural) eran plantillas sin contenido generado por el bot; se retiran únicamente si siguen vacías o con sus encabezados originales. Categorías y Configuración tampoco alimentaban el bot: se retiran solo si coinciden con las plantillas iniciales sin personalizar. Una pestaña modificada se conserva.
