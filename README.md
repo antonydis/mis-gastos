@@ -16,13 +16,25 @@ La primera interacción con esta versión migra los antiguos valores de perfil d
 Bot: https://t.me/missgastosya_bot
 
 1. Enviar `/start` y conectar Google. El acceso está limitado a archivos de la aplicación (`drive.file`).
-2. Al conectar una cuenta nueva se ofrece país, ciudad y moneda habitual, con un atajo Montreal/CAD. El país propone la moneda; se puede cambiar. Se confirma el idioma. Es opcional: enviar un gasto directamente usa los valores iniciales.
+2. Al conectar una cuenta nueva basta confirmar moneda y hora local (CAD/Montreal por defecto). Solo se pide otra moneda o una ciudad si se quiere cambiar algo. No se pregunta país, nombre ni otros datos de perfil. El idioma se cambia en Ajustes. A continuación se ofrecen recordatorios opcionales; se puede saltar toda la configuración enviando un gasto.
 3. Enviar texto, una foto o un audio, sin comandos. Solo se pregunta cuando falta monto, descripción o hay una ambigüedad esencial. Sin fecha se usa hoy en la zona del perfil; sin moneda se usa la del perfil.
 4. La confirmación muestra monto, fecha, categoría y pago si se indicó. Ver detalles consulta los datos actuales de la hoja. Los datos complementarios no generan avisos de pendiente ni preguntas.
 5. Corregir permite actualizar monto, moneda, fecha, descripción, comercio, categoría, pago o notas, en la misma fila. Se responde por texto o audio. Después de un gasto individual reciente también se reconoce «eran 15, no 50» o «fue con mi tarjeta RBC». En un lote o sin contexto reciente se elige el gasto. La corrección reciente tiene diez minutos de contexto; el botón del gasto y el menú funcionan después consultando el Sheet.
 6. Las correcciones conservan el ID, origen y fecha de registro. Si cambia el monto o moneda de un gasto extranjero se descarta un equivalente CAD antiguo. Si falta el ID, está repetido o el registro cambió durante el análisis no se sobrescribe. Deshacer elimina el registro original, no restaura una versión anterior de una corrección; por eso la confirmación corregida no ofrece Deshacer.
 
-Menú: Registrar gasto, Varios gastos, Este mes, Por categoría, Corregir gasto, Ver mi hoja y Ajustes. Perfil, moneda, idioma y ayuda están en Ajustes. `/perfil` configura la ubicación; `/corregir` permite elegir entre los últimos ocho gastos. Los botones viejos y `/pendientes` siguen funcionando como acceso a corrección. `/cancelar` abandona preguntas o cambios sin borrar gastos. `/link` vuelve a autorizar Google sin cambiar un perfil existente.
+Menú: Registrar gasto, Varios gastos, Este mes, Por categoría, Corregir gasto, Ver mi hoja y Ajustes. Perfil, Recordatorios, moneda, idioma y ayuda están en Ajustes. `/perfil` configura moneda y hora local; `/recordatorios` cambia los avisos; `/corregir` permite elegir entre los últimos ocho gastos. Los botones viejos y `/pendientes` siguen funcionando como acceso a corrección. `/cancelar` abandona preguntas o cambios sin borrar gastos. `/link` vuelve a autorizar Google sin cambiar un perfil existente.
+
+## Recordatorios opcionales
+
+- Desactivados hasta que la persona acepte. Se ofrece 20:30, horarios rápidos y cualquier hora HH:MM en formato de 24 horas.
+- El aviso utiliza la zona horaria guardada; se puede cambiar desde Perfil. El Worker revisa cada cinco minutos, por lo que la entrega normal puede demorarse hasta cinco minutos respecto de la hora elegida.
+- Un gasto guardado con fecha de hoy o «Hoy no gasté» marca el día como revisado y evita más avisos ese día. Esta última opción no escribe filas ni gastos de cero en Sheets.
+- Si pasan 24 horas sin registrar/revisar, el siguiente aviso diario invita a completar gastos de ayer. No se añade otra notificación independiente.
+- Máximo un aviso automático por día local. «Recordarme más tarde» permite otro dentro de una hora, por petición explícita; solo hay una posposición pendiente. Registrar un gasto o marcar el día revisado la cancela.
+- Ajustes → Recordatorios permite cambiar hora, pausar o reactivar. Si la hora ya pasó al activar/cambiar, se empieza al día siguiente. Los botones de revisión/posposición de días anteriores no modifican el día actual.
+- Se reserva el envío con una actualización atómica antes de llamar a Telegram. Ante una respuesta de red incierta no se reintenta ese día para evitar duplicados; los avisos son de mejor esfuerzo, no una alarma garantizada.
+
+Las preferencias mínimas necesarias sí se conservan: moneda, zona horaria, idioma, activación/hora del aviso, última actividad, día revisado y control de envíos/posposición. No se guarda país ni un perfil personal adicional; los gastos definitivos permanecen en Google Sheets. La tabla reminder_settings se crea automáticamente en instalaciones existentes y también está en worker/schema.sql.
 
 ## Importar varios movimientos
 
@@ -79,7 +91,7 @@ D1 conserva el vínculo Telegram/Google/Sheet, el refresh token cifrado, prefere
 
 ## Validación
 
-`npm test` cubre contratos, CORS, OAuth, formatos de medios de Telegram, fechas, zonas horarias, monedas, columnas, conservación de filas antiguas, corrección por texto/audio sin duplicar, configuración del perfil y simplificación de la vista sin mover datos, importación con confirmación/cancelación y español/inglés, con servicios simulados. Los permisos reales de Google y la extracción de archivos concretos requieren pruebas de extremo a extremo.
+`npm test` requiere Node y Python 3 (solo para pruebas SQLite, sin dependencias adicionales). Cubre recordatorios con SQL real, concurrencia, posposición, pausas, cambios estacionales y perfil mínimo, además de contratos, CORS, OAuth, formatos de medios de Telegram, fechas, zonas horarias, monedas, columnas, conservación de filas antiguas, corrección por texto/audio sin duplicar, configuración del perfil y simplificación de la vista sin mover datos, importación con confirmación/cancelación y español/inglés, con servicios simulados. Los permisos reales de Google y la extracción de archivos concretos requieren pruebas de extremo a extremo.
 
 ## Repositorio privado
 

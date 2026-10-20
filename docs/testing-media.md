@@ -7,7 +7,8 @@ Desde la raíz: `npm test` y `npm run check`.
 - media-pipeline: contratos de texto/foto/audio y clasificación contextual.
 - telegram-flow: vinculación, escritura, deshacer y actualización del historial.
 - operational: comportamiento con servicios simulados, CORS, errores de OAuth, fechas de Sheets, MIME de descargas Telegram y normalización de audios .oga/.ogg.
-- product: resúmenes con conteos, zona horaria, exclusiones y monedas; perfil país/moneda/ciudad; simplificación conservadora de pestañas; corrección de ID, filas vacías, escritura RAW y protección de cambios concurrentes.
+- reminders: SQL real en SQLite mediante Python 3; aceptación explícita, perfil mínimo, horas válidas, cron duplicado/concurrente, posposición, actividad, revisión sin gasto, pausa, cambio estacional, varias zonas, paginación y fallos de red sin reenvío.
+- product: resúmenes con conteos, zona horaria, exclusiones y monedas; simplificación conservadora de pestañas; corrección de ID, filas vacías, escritura RAW y protección de cambios concurrentes.
 - records: vista simplificada sin mover filas antiguas, corrección por texto/audio en la misma fila, lotes sin escritura previa, confirmar/cancelar, confirmación repetida y español/inglés.
 
 Los servicios externos se simulan en estas pruebas. Pasarlas no demuestra que cada recibo o extracto real se haya interpretado correctamente.
@@ -26,8 +27,11 @@ Los servicios externos se simulan en estas pruebas. Pasarlas no demuestra que ca
 10. Probar un documento con más de 25 gastos y un PDF ilegible/protegido. No debe guardar una lista parcial silenciosamente; debe pedir dividir o aclarar.
 11. Cambiar idioma en Ajustes y probar bienvenida, menú, registro, preguntas, importación y consultas en español e inglés.
 
-12. Configurar Canadá/Vancouver y Nicaragua/USD/Managua; verificar que moneda/fecha siguen el perfil y que /link no lo restablece. Probar otra ciudad y perfil vencido.
+12. Confirmar CAD/Montreal con un toque; cambiar solo moneda o ciudad si hace falta. Verificar que /link no restablece esos valores y que no se pregunta por país ni otros datos personales.
 13. Consultar una hoja antigua: ocho columnas visibles, datos ocultos intactos. Las pestañas personalizadas deben conservarse. Las nuevas hojas solo contienen Movimientos.
+14. Activar un aviso unos minutos en el futuro; comprobar hora local, botones y un solo envío. Registrar un gasto de hoy antes del aviso y comprobar que se omite.
+15. Pulsar Hoy no gasté: no debe aparecer una fila en Sheets. Posponer sin actividad: un aviso dentro de una hora. Pausar debe cancelar también esa posposición. Un botón de ayer no debe revisar hoy.
+16. Dejar pasar 24 horas sin actividad: el siguiente aviso diario invita a completar ayer, sin notificación adicional.
 
 ## Límites de esta versión
 

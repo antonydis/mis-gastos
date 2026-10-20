@@ -1,3 +1,4 @@
+import {handleReminderCallback,reminderSettings,reminderTimeFromText,recordActivity} from './reminders.js';
 import {startProfile,handleProfileCallback,handleProfileText} from './profile.js';
 import {preferences,setLanguage} from './preferences.js';
 import {translateMessage,translateMarkup,normalizeMenu} from './i18n.js';
@@ -29,7 +30,7 @@ export async function send(chatId,text,env,reply_markup=menu){
 }
 
 export async function setupWebhook(env){
-  await call('setMyCommands',{commands:[{command:'start',description:'Conectar Google y empezar'},{command:'mes',description:'Ver gastos de este mes'},{command:'categorias',description:'Ver gastos por categoría'},{command:'corregir',description:'Corregir un gasto'},{command:'perfil',description:'Moneda, ciudad e idioma'},{command:'idioma',description:'Español / English'},{command:'hoja',description:'Abrir mi Google Sheet'},{command:'link',description:'Volver a conectar Google'},{command:'cancelar',description:'Cancelar sin cambiar tus gastos'},{command:'ayuda',description:'Cómo usar Mis gastos'}]},env);
+  await call('setMyCommands',{commands:[{command:'start',description:'Conectar Google y empezar'},{command:'mes',description:'Ver gastos de este mes'},{command:'categorias',description:'Ver gastos por categoría'},{command:'corregir',description:'Corregir un gasto'},{command:'perfil',description:'Moneda y hora local'},{command:'recordatorios',description:'Configurar recordatorios diarios'},{command:'idioma',description:'Español / English'},{command:'hoja',description:'Abrir mi Google Sheet'},{command:'link',description:'Volver a conectar Google'},{command:'cancelar',description:'Cancelar sin cambiar tus gastos'},{command:'ayuda',description:'Cómo usar Mis gastos'}]},env);
   return call('setWebhook',{
     url:env.PUBLIC_BASE_URL.replace(/\/$/,'')+'/telegram/webhook',
     secret_token:env.TELEGRAM_WEBHOOK_SECRET,
@@ -156,6 +157,7 @@ async function editFromText(uid,chat,text,link,pending,env){
   const lock=await env.DB.prepare("UPDATE pending SET kind='edit-saving' WHERE telegram_user_id=? AND kind='edit' AND payload=? AND expires_at>?").bind(uid,pending.payload,Date.now()).run();
   if(lock.meta?.changes!==1)return send(chat,'Ese cambio ya se está guardando o venció. Revisa tu hoja antes de intentarlo otra vez.',env);
   const updated=await correctExpense(link.sheet_id,payload.id,corrected,access,original);
+  await recordActivity(uid,link.timezone,[updated],env).catch(error=>console.error('Activity update failed',error));
   await env.DB.prepare('INSERT INTO pending VALUES(?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,expires_at=excluded.expires_at').bind(uid,'last',JSON.stringify({ids:[updated.id]}),Date.now()+10*60*1000).run();
   return send(chat,shortReceipt([updated]).replace('✓ Guardado','✓ Corregido'),env,recordButtons([updated.id],[updated],link.sheet_id,false));
 }
@@ -175,6 +177,7 @@ async function saveClearExpenses(uid,chat,link,result,env,confirmed=false){
   if(!result.expenses?.length)return send(chat,'¿Qué compraste y cuánto pagaste? También puedes enviarme una foto del recibo.',env);
   const access=await refreshAccess(link.google_refresh_token,env);
   const ids=await appendExpenses(link.sheet_id,result.expenses,access);
+  await recordActivity(uid,link.timezone,result.expenses,env).catch(error=>console.error('Activity update failed',error));
   await env.DB.prepare(
     'INSERT INTO pending VALUES(?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,expires_at=excluded.expires_at'
   ).bind(uid,'undo',JSON.stringify({ids}),Date.now()+10*60*1000).run();
@@ -262,6 +265,10 @@ async function processAudio(uid,chat,message,link,env){
 async function handleCallback(cb,env){
   await call('answerCallbackQuery',{callback_query_id:cb.id},env).catch(()=>{});
   if(cb.message?.chat?.type&&cb.message.chat.type!=='private')return;
+  if(cb.data?.startsWith('reminder:add:'))return handleUpdate({message:{from:cb.from,chat:cb.message.chat,text:'🧾 Registrar gasto'}},env);
+  if(cb.data?.startsWith('reminder:')){
+    try{return await handleReminderCallback(cb,env,send);}catch(error){console.error('Reminder settings failed',error);return send(String(cb.from.id),'No pude guardar el recordatorio. Inténtalo otra vez desde Ajustes.',env);}
+  }
   if(cb.data?.startsWith('profile:')){
     try{return await handleProfileCallback(cb,env,send);}catch(error){console.error('Profile failed',error);return send(String(cb.from.id),'No pude guardar el perfil. Inténtalo otra vez desde Ajustes.',env);}
   }
@@ -387,18 +394,19 @@ export async function handleUpdate(update,env){
 
   if(!link)return createLink(chat,uid,env);
   if(/^\/perfil\b/i.test(text))return startProfile(chat,env,send);
+  if(/^\/recordatorios\b/i.test(text)){try{return await reminderSettings(uid,chat,env,send);}catch(error){console.error('Reminder settings failed',error);return send(chat,'No pude guardar el recordatorio. Inténtalo otra vez desde Ajustes.',env);}}
 
   if (/^\/(help|ayuda)\b/i.test(text)||text==='❓ Ayuda')return send(chat,help,env);
   if (/^\/cancelar\b/i.test(text)){
-    await env.DB.prepare("DELETE FROM pending WHERE telegram_user_id=? AND kind IN ('clarify','complete','import','edit','edit-select','profile')").bind(uid).run();
+    await env.DB.prepare("DELETE FROM pending WHERE telegram_user_id=? AND kind IN ('clarify','complete','import','edit','edit-select','profile','reminder-time')").bind(uid).run();
     return send(chat,'Listo, cancelado. Tus gastos guardados siguen en la hoja.',env);
   }
   if(text==='🧾 Registrar gasto'){
-    await env.DB.prepare("DELETE FROM pending WHERE telegram_user_id=? AND kind IN ('clarify','complete','edit','edit-select','profile')").bind(uid).run();
+    await env.DB.prepare("DELETE FROM pending WHERE telegram_user_id=? AND kind IN ('clarify','complete','edit','edit-select','profile','reminder-time')").bind(uid).run();
     return send(chat,'¿Qué gastaste?\nEjemplo: «Pagué 25 en supermercado con mi tarjeta RBC».\nTambién puedes enviar una foto o un audio.',env);
   }
   if(text==='📥 Importar movimientos')return send(chat,'Envía una imagen o PDF con tus gastos. Te mostraré la lista antes de guardarla.\nHasta 25 gastos por envío.',env);
-  if(text==='⚙️ Ajustes')return send(chat,'¿Qué quieres ajustar?',env,{inline_keyboard:[[{text:'Mi perfil',callback_data:'profile:start'}],[{text:'💱 Moneda',callback_data:'menu:currency'},{text:'🌐 Idioma / Language',callback_data:'menu:language'}],[{text:'❓ Ayuda',callback_data:'menu:help'}]]});
+  if(text==='⚙️ Ajustes')return send(chat,'¿Qué quieres ajustar?',env,{inline_keyboard:[[{text:'Mi perfil',callback_data:'profile:start'},{text:'Recordatorios',callback_data:'reminder:settings'}],[{text:'💱 Moneda',callback_data:'menu:currency'},{text:'🌐 Idioma / Language',callback_data:'menu:language'}],[{text:'❓ Ayuda',callback_data:'menu:help'}]]});
   if(text==='💱 Moneda')return send(chat,'Moneda actual: '+link.currency+'. ¿Cuál prefieres usar?',env,{inline_keyboard:[['CAD','USD','NIO','EUR','GTQ','MXN'].map(currency=>({text:currency,callback_data:'currency:'+currency}))]});
   if (/^\/moneda\b/i.test(text)){
     const currency=text.split(/\s+/)[1]?.toUpperCase();
@@ -408,6 +416,9 @@ export async function handleUpdate(update,env){
   }
   const isReply=m.text&&!text.startsWith('/')&&!['📊 Este mes','🏷 Categorías','📄 Mi hoja','📝 Pendientes'].includes(text);
   const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(uid).first();
+  if(pending?.kind==='reminder-time'&&Number(pending.expires_at)>Date.now()&&isReply){
+    try{return await reminderTimeFromText(uid,chat,text,link,env,send);}catch(error){console.error('Reminder time failed',error);return send(chat,'No pude guardar el recordatorio. Inténtalo otra vez desde Ajustes.',env);}
+  }
   if(pending?.kind==='profile'&&Number(pending.expires_at)>Date.now()&&isReply){
     try{return await handleProfileText(uid,chat,text,pending,env,send);}catch(error){console.error('Profile text failed',error);return send(chat,'No pude guardar el perfil. Inténtalo otra vez desde Ajustes.',env);}
   }

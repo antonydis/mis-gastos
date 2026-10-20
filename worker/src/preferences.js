@@ -12,3 +12,8 @@ export async function setLanguage(userId,language,env){
   if(!['es','en'].includes(language))throw new Error('Unsupported language');
   await env.DB.prepare('UPDATE user_preferences SET language=? WHERE telegram_user_id=?').bind(language,userId).run();
 }
+
+export async function unfinishedExpense(userId,env){
+  const pending=await env.DB.prepare('SELECT * FROM pending WHERE telegram_user_id=?').bind(userId).first();
+  return pending&&Number(pending.expires_at)>Date.now()&&['clarify','complete','edit','edit-select','edit-saving','import','import-saving'].includes(pending.kind);
+}

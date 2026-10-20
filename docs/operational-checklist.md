@@ -31,4 +31,6 @@ CAD y America/Toronto son los valores iniciales; los perfiles anteriores se ajus
 
 Al próximo registro o consulta se simplifica Movimientos a ocho columnas visibles, preservando columnas históricas ocultas. Solo se retiran pestañas que coincidan con plantillas sin personalizar. Corregir modifica la misma fila, por texto o audio. /perfil cambia moneda y ciudad; se ofrece también al conectar una cuenta nueva. Los campos complementarios son opcionales y no generan pendientes. Imágenes con múltiples gastos y PDFs necesitan confirmación; límite 25 gastos/8 MB. Ver testing-media.md para las pruebas de extractos y exclusiones.
 
-El cron horario configurado en wrangler.jsonc limpia estados temporales vencidos. Los estados de importación contienen datos financieros temporales hasta confirmación o limpieza; no son un historial permanente.
+El cron de wrangler.jsonc corre cada cinco minutos para entregar avisos, y una vez por hora limpia estados temporales vencidos. Los estados de importación contienen datos financieros temporales hasta confirmación o limpieza; no son un historial permanente.
+
+Los avisos requieren aceptación desde el onboarding o Ajustes → Recordatorios (/recordatorios). La tabla reminder_settings se crea automáticamente; no hay que ejecutar una migración manual para instalaciones existentes. Verificar en Cloudflare que el trigger */5 * * * * quedó activo después del despliegue. Probar con dos zonas horarias y con un aviso futuro; no se promete precisión menor de cinco minutos.

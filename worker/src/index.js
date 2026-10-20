@@ -1,7 +1,8 @@
+import {runReminders} from './reminders.js';
 import {preferences} from './preferences.js';
 import {connectionIssue,connectionPage} from './connection.js';
 import {googleAuthUrl,exchangeCode,ensureSheet} from './google.js';
-import {createLink,handleUpdate,saveGoogleLink,setupWebhook} from './telegram.js';
+import {createLink,handleUpdate,saveGoogleLink,setupWebhook,send} from './telegram.js';
 import {randomCode,encrypt} from './utils.js';
 import {analyzeReceipt,analyzeAudio,analyzeText} from './openai.js';
 
@@ -118,12 +119,13 @@ async function webhook(request,env,ctx){
 
 export default{
   async scheduled(event,env){
-    const now=Date.now();
-    await env.DB.batch([
-      env.DB.prepare('DELETE FROM pending WHERE expires_at<?').bind(now),
-      env.DB.prepare('DELETE FROM link_codes WHERE expires_at<?').bind(now),
-      env.DB.prepare('DELETE FROM oauth_states WHERE expires_at<?').bind(now),
-      env.DB.prepare('DELETE FROM processed_updates WHERE processed_at<?').bind(now-7*86400000)
+    const now=new Date(event.scheduledTime||Date.now());
+    await runReminders(env,send,now);
+    if(now.getUTCMinutes()===0)await env.DB.batch([
+      env.DB.prepare('DELETE FROM pending WHERE expires_at<?').bind(now.getTime()),
+      env.DB.prepare('DELETE FROM link_codes WHERE expires_at<?').bind(now.getTime()),
+      env.DB.prepare('DELETE FROM oauth_states WHERE expires_at<?').bind(now.getTime()),
+      env.DB.prepare('DELETE FROM processed_updates WHERE processed_at<?').bind(now.getTime()-7*86400000)
     ]);
   },
   async fetch(request,env,ctx){

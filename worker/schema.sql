@@ -39,3 +39,14 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   telegram_user_id TEXT PRIMARY KEY,
   language TEXT NOT NULL DEFAULT 'es'
 );
+
+
+CREATE TABLE IF NOT EXISTS reminder_settings (
+ telegram_user_id TEXT PRIMARY KEY,
+ enabled INTEGER NOT NULL DEFAULT 0,
+ local_time TEXT NOT NULL DEFAULT '20:30',
+ reviewed_day TEXT NOT NULL DEFAULT '',
+ last_activity_at INTEGER NOT NULL DEFAULT 0,
+ last_sent_day TEXT NOT NULL DEFAULT '',
+ snooze_until INTEGER NOT NULL DEFAULT 0
+);
