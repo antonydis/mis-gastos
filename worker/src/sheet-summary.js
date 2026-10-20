@@ -1,3 +1,4 @@
+import {breakdownRequests,BREAKDOWN_KEY} from './sheet-breakdown.js';
 const KEY='mis_gastos_summary';
 const CURRENCIES=['CAD','USD','NIO','EUR','GTQ','MXN'];
 
@@ -71,12 +72,12 @@ export function summaryRequests(metadata){
   {updateDimensionProperties:{range:{sheetId:id,dimension:'ROWS',startIndex:1,endIndex:4},properties:{pixelSize:28},fields:'pixelSize'}},
   {updateDimensionProperties:{range:{sheetId:id,dimension:'ROWS',startIndex:4,endIndex:23},properties:{pixelSize:22},fields:'pixelSize'}}
  ];
- return requests;
+ return requests.concat(breakdownRequests(id,title,metadata.properties?.locale,rowCount));
 }
-export function summaryChart(id,column){
+export function summaryChart(id,column,breakdown=true){
  const title=column===0?'Gastos por semana':'Gastos por mes';
-  const chartRange=offset=>({sheetId:id,startRowIndex:23,startColumnIndex:column+offset,endColumnIndex:column+offset+1});
-  return {spec:{title,subtitle:'Moneda seleccionada en B3',fontName:'Arial',basicChart:{chartType:'COLUMN',legendPosition:'NO_LEGEND',headerCount:1,axis:[{position:'BOTTOM_AXIS',title:column===0?'Semana (lunes)':'Mes'},{position:'LEFT_AXIS',title:'Monto'}],domains:[{domain:{sourceRange:{sources:[chartRange(0)]}}}],series:[{series:{sourceRange:{sources:[chartRange(1)]}},targetAxis:'LEFT_AXIS',colorStyle:{rgbColor:{red:0.17,green:0.43,blue:0.35}}}]}},position:{overlayPosition:{anchorCell:{sheetId:id,rowIndex:5,columnIndex:column},widthPixels:510,heightPixels:300}}};
+  const chartRange=offset=>({sheetId:id,startRowIndex:23,startColumnIndex:column+offset+(breakdown?8:0),endColumnIndex:column+offset+1+(breakdown?8:0)});
+  return {spec:{title,subtitle:'Historial · moneda seleccionada en B3',hiddenDimensionStrategy:'SHOW_ALL',fontName:'Arial',basicChart:{chartType:'COLUMN',legendPosition:'NO_LEGEND',headerCount:1,axis:[{position:'BOTTOM_AXIS',title:column===0?'Semana (lunes)':'Mes'},{position:'LEFT_AXIS',title:'Monto'}],domains:[{domain:{sourceRange:{sources:[chartRange(0)]}}}],series:[{series:{sourceRange:{sources:[chartRange(1)]}},targetAxis:'LEFT_AXIS',colorStyle:{rgbColor:{red:0.17,green:0.43,blue:0.35}}}]}},position:{overlayPosition:{anchorCell:{sheetId:id,rowIndex:5,columnIndex:column},widthPixels:510,heightPixels:300}}};
 }
 function summaryTab(meta){
  const markers=[...(meta.developerMetadata||[]),...(meta.sheets||[]).flatMap(x=>x.developerMetadata||[])];
@@ -97,19 +98,30 @@ export async function ensureSummarySheet(sheetId,request){
   }
   meta=await read();
  }
- const tab=summaryTab(meta);
+ let tab=summaryTab(meta);
  if(!tab)return;
- const missing=[0,4].filter(column=>!tab.charts?.some(x=>x.spec?.title===summaryChart(tab.properties.sheetId,column).spec.title&&x.spec?.basicChart?.series?.length));
+ let hasBreakdown=[...(meta.developerMetadata||[]),...(tab.developerMetadata||[])].some(x=>x.metadataKey===BREAKDOWN_KEY&&x.location?.sheetId===tab.properties.sheetId);
+ if(!hasBreakdown){
+  // Upgrade only untouched app anchors; preserve personal changes and selectors.
+  const anchors=(await request(base+'/values/'+encodeURIComponent("'"+tab.properties.title.replaceAll("'","''")+"'!A23:G24")+'?valueRenderOption=FORMULA')).values||[];
+  const controls=(await request(base+'/values/'+encodeURIComponent("'"+tab.properties.title.replaceAll("'","''")+"'!D3:G3")+'?valueRenderOption=FORMULA')).values||[];
+  if(anchors[0]?.[0]==='Por semana'&&anchors[0]?.[4]==='Por mes'&&anchors[1]?.[0]?.includes('QUERY(W2:AA')&&anchors[1]?.[4]?.includes('QUERY(W2:AA')&&controls[0]?.[0]==='Montos originales. No se suman monedas distintas.'){
+   await request(base+':batchUpdate',{method:'POST',body:JSON.stringify({requests:breakdownRequests(tab.properties.sheetId,tab.properties.title,meta.properties?.locale,tab.properties.gridProperties.rowCount,tab.properties.gridProperties.columnCount)})});
+   meta=await read();tab=summaryTab(meta);hasBreakdown=true;
+  }
+ }
+
+ const missing=[0,4].filter(column=>!tab.charts?.some(x=>x.spec?.title===summaryChart(tab.properties.sheetId,column,hasBreakdown).spec.title&&x.spec?.basicChart?.series?.length&&x.spec.basicChart.series[0].series?.sourceRange?.sources?.[0]?.startColumnIndex===column+1+(hasBreakdown?8:0)));
  if(!missing.length)return;
  // Wait for native formula output before adding a numeric series. Sheets may
  // discard series bound to an empty/not-yet-calculated table during creation.
- const values=(await request(base+'/values/'+encodeURIComponent("'"+tab.properties.title.replaceAll("'","''")+"'!A24:G26")+'?valueRenderOption=UNFORMATTED_VALUE')).values||[];
+ const values=(await request(base+'/values/'+encodeURIComponent("'"+tab.properties.title.replaceAll("'","''")+(hasBreakdown?"'!I24:O26":"'!A24:G26"))+'?valueRenderOption=UNFORMATTED_VALUE')).values||[];
  const charts=[];
  const used=new Set((meta.sheets||[]).flatMap(s=>(s.charts||[]).map(c=>c.chartId)));
  let nextId=1800002031;
  for(const column of missing){
   if(!values.slice(1).some(row=>Number.isFinite(row[column+1])))continue;
-  const chart=summaryChart(tab.properties.sheetId,column);
+  const chart=summaryChart(tab.properties.sheetId,column,hasBreakdown);
   const existing=tab.charts?.find(x=>x.spec?.title===chart.spec.title);
   if(existing)charts.push({updateChartSpec:{chartId:existing.chartId,spec:chart.spec}});
   else{

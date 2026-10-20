@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {breakdownRequests,BREAKDOWN_KEY} from '../worker/src/sheet-breakdown.js';
 import {summaryRequests,summaryChart,formulaForLocale,ensureSummarySheet} from '../worker/src/sheet-summary.js';
 const source={properties:{sheetId:10,title:'Movimientos',gridProperties:{rowCount:1004,columnCount:26}}};
 const meta={properties:{locale:'es'},sheets:[source]};
@@ -12,9 +13,11 @@ const formulas=plan.filter(x=>x.updateCells?.rows[0].values[0].userEnteredValue.
 assert.ok(formulas.some(x=>x.includes('DATEVALUE')&&x.includes('ISNUMBER')),'Both ISO text and numeric dates');
 assert.ok(formulas.some(x=>x.includes('WEEKDAY(W2:W;2)+1')),'Weeks start on Monday, including year boundaries');
 assert.ok(formulas.some(x=>x.includes('DATE(YEAR(W2:W);MONTH(W2:W);1)')),'Months include the year');
-assert.equal(formulas.filter(x=>x.includes('QUERY(')).length,2);
-assert.ok(formulas.filter(x=>x.includes('QUERY(')).every(x=>x.includes('AA = ')&&x.includes('$B$3')&&x.includes('sum(Z), count(Z)')));
-assert.ok(formulas.filter(x=>x.includes('QUERY(')).every(x=>x.includes('HSTACK("Sin gastos";0;0)')),'Empty summaries must have honest zero-total/zero-count placeholders');
+const history=formulas.filter(x=>x.includes('QUERY(W2:AA'));
+assert.equal(history.length,4);
+assert.equal(formulas.filter(x=>x.includes('QUERY(HSTACK(')).length,2);
+assert.ok(history.every(x=>x.includes('AA = ')&&x.includes('$B$3')&&x.includes('sum(Z), count(Z)')));
+assert.ok(history.every(x=>x.includes('HSTACK("Sin gastos";0;0)')),'Empty summaries must have honest zero-total/zero-count placeholders');
 assert.equal(formulaForLocale('=IF(A1="a,b",1,2)','es'),'=IF(A1="a,b";1;2)');
 assert.equal(formulaForLocale('=IF(A1="a,b",1,2)','en_US'),'=IF(A1="a,b",1,2)');
 const marker={metadataKey:'mis_gastos_summary',metadataValue:'v1',location:{sheetId:tab.sheetId}};
@@ -26,7 +29,7 @@ assert.notEqual(summaryRequests({...meta,sheets:[source,{properties:{sheetId:2,t
 assert.notEqual(summaryRequests({...meta,sheets:[source,{properties:{sheetId:1800002026,title:'Otra hoja'}}]}).find(x=>x.addSheet).addSheet.properties.sheetId,1800002026);
 for(const col of [0,4]){
  const chart=summaryChart(tab.sheetId,col);
- assert.equal(chart.spec.basicChart.series[0].series.sourceRange.sources[0].startColumnIndex,col+1);
+ assert.equal(chart.spec.basicChart.series[0].series.sourceRange.sources[0].startColumnIndex,col+9);
  assert.equal(chart.spec.basicChart.headerCount,1);assert.equal(chart.spec.basicChart.chartType,'COLUMN');
  assert.ok(chart.position.overlayPosition.anchorCell.rowIndex<23,'Charts stay above expanding tables');
  assert.equal(chart.position.overlayPosition.widthPixels,510);
@@ -35,12 +38,13 @@ for(const col of [0,4]){
 let state=structuredClone(meta),writes=[],sourceRows=[['Semana','Total','Gastos','','Mes','Total','Gastos'],['Sin gastos',0,0,'','Sin gastos',0,0]];
 const request=async(url,options)=>{
  if(!options){
+  if(url.includes('valueRenderOption=FORMULA'))return {values:[]};
   if(url.includes('/values/'))return {values:sourceRows};
   return structuredClone(state);
  }
  const requests=JSON.parse(options.body).requests;writes.push(requests);
  for(const r of requests){
-  if(r.addSheet)state.sheets.push({properties:r.addSheet.properties,developerMetadata:[marker],charts:[]});
+  if(r.addSheet)state.sheets.push({properties:r.addSheet.properties,developerMetadata:[marker,...requests.filter(x=>x.createDeveloperMetadata).map(x=>x.createDeveloperMetadata.developerMetadata)],charts:[]});
   if(r.addChart)state.sheets.at(-1).charts.push(r.addChart.chart);
   if(r.updateChartSpec){const chart=state.sheets.at(-1).charts.find(x=>x.chartId===r.updateChartSpec.chartId);chart.spec=r.updateChartSpec.spec;}
  }
@@ -62,4 +66,15 @@ const race=async(url,options)=>{
 await ensureSummarySheet('sheet',race);assert.equal(state.sheets.filter(x=>x.properties.title==='Resumen').length,1);
 // Genuine initialization errors remain visible to the caller (finance callers handle them separately).
 await assert.rejects(()=>ensureSummarySheet('sheet',async(url,options)=>{if(options)throw Error('Permission denied');return structuredClone(meta);}));
+const detail=breakdownRequests(42,'My summary','en_US',1200,32);
+assert.ok(detail.every(x=>!x.updateCells||x.updateCells.start.sheetId===42));
+assert.equal(detail.find(x=>x.updateSheetProperties).updateSheetProperties.properties.gridProperties.columnCount,32,'Preserve extra columns');
+assert.ok(detail.some(x=>x.setDataValidation?.rule.condition.values[0].userEnteredValue.includes("'My summary'")));
+assert.ok(detail.some(x=>x.createDeveloperMetadata?.developerMetadata.metadataKey===BREAKDOWN_KEY));
+const detailFormulas=detail.filter(x=>x.updateCells).map(x=>x.updateCells.rows[0].values[0].userEnteredValue.formulaValue).filter(Boolean);
+assert.equal(detailFormulas.filter(x=>x.includes('QUERY(HSTACK')).length,2);
+assert.ok(detailFormulas.filter(x=>x.includes('QUERY(HSTACK')).every(x=>x.includes('DATEVALUE($E$3')&&x.includes('$B$3')&&x.includes('CHOOSECOLS(t,2)/SUM')),'Month, currency and share must use the same records');
+assert.ok(detailFormulas.some(x=>x.includes('Sin especificar')));
+// Check balanced formula brackets outside strings, including the nested normalization helpers.
+for(const f of detailFormulas){let depth=0,quoted=false;for(const c of f){if(c==='"')quoted=!quoted;if(!quoted){if(c==='(')depth++;if(c===')')depth--;assert.ok(depth>=0,f);}}assert.equal(depth,0,f);}
 console.log('OK: native summary requests, locale-safe formulas, source preservation, Monday weeks, monthly totals, separate currencies, empty data, chart initialization and idempotency.');
