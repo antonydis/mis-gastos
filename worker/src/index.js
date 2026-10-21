@@ -75,7 +75,7 @@ async function oauthCallback(url,env){
 // Pilot registrations are stored separately from spending data. Configure
 // RESEND_API_KEY, WAITLIST_FROM_EMAIL and WAITLIST_NOTIFY_EMAIL as Worker secrets.
 async function sendPilotNotification(entry,env){
-  if(!env.RESEND_API_KEY||!env.WAITLIST_FROM_EMAIL||!env.WAITLIST_NOTIFY_EMAIL)return false;
+  if(!env.RESEND_API_KEY||!env.WAITLIST_FROM_EMAIL||!env.WAITLIST_NOTIFY_EMAIL){console.error('Pilot admin email skipped: missing mail configuration');return false;}
   try{
     const message=await fetch('https://api.resend.com/emails',{
       method:'POST',
@@ -103,7 +103,7 @@ function pilotEmailHtml(name){
   return '<!doctype html><html lang="es"><body style="margin:0;background:#f6f5ef;font-family:Arial,sans-serif;color:#20352b;padding:28px 12px"><div style="max-width:520px;margin:auto;background:white;border:1px solid #dce5dc;border-radius:14px;padding:32px"><p style="font-size:12px;letter-spacing:2px;font-weight:bold;color:#458361">MIS GASTOS</p><h1 style="font-size:25px;margin:25px 0 18px">Confirmación de inscripción</h1><p>Hola '+safe+',</p><p style="line-height:1.7">Gracias por tu interés en participar en el piloto de Mis Gastos. Hemos recibido correctamente tu inscripción.</p><p style="line-height:1.7">Durante la próxima semana me pondré en contacto contigo para informarte sobre los siguientes pasos.</p><p style="margin-top:26px;line-height:1.7">Saludos,<br><strong>Antony Díaz</strong><br>Mis Gastos</p><p style="border-top:1px solid #e7ece6;padding-top:16px;font-size:12px;color:#718176">Este mensaje confirma tu inscripción; el acceso al piloto se enviará posteriormente.</p></div></body></html>';
 }
 async function confirmPilotSignup(entry,env){
-  if(!env.RESEND_API_KEY||!env.WAITLIST_FROM_EMAIL)return false;
+  if(!env.RESEND_API_KEY||!env.WAITLIST_FROM_EMAIL){console.error('Pilot confirmation skipped: missing mail configuration');return false;}
   try{
     const response=await fetch('https://api.resend.com/emails',{
       method:'POST',
@@ -134,7 +134,7 @@ async function registerPilot(request,env){
   const size=Number(request.headers.get('content-length')||0);
   if(size>4096)return json({ok:false,error:'Request too large'},413,env,request);
   const body=await request.json();
-  if(body.website)return json({ok:true},200,env,request);
+  if(body.website){console.warn('Pilot signup blocked by honeypot');return json({ok:false,error:'Please retry the form'},400,env,request);}
   const name=String(body.name||'').trim(),email=String(body.email||'').trim().toLowerCase();
   if(!body.consent||name.length<2||name.length>100||email.length>254||!(/^[^\s@]+@[^\s@]+\.[^\s@]+$/).test(email))
     return json({ok:false,error:'Invalid details or missing consent'},400,env,request);
@@ -144,8 +144,10 @@ async function registerPilot(request,env){
   await ensurePilotConfirmationsTable(env);
   await env.DB.prepare('INSERT OR IGNORE INTO pilot_confirmation_queue(email,name,queued_at,sent_at) VALUES(?,?,?,NULL)').bind(email,name,Date.now()).run();
   const entry=await env.DB.prepare('SELECT name,email,created_at,notified_at FROM pilot_waitlist WHERE email=?').bind(email).first();
+  console.info('Pilot signup persisted; admin notification pending:',!entry.notified_at);
   if(!entry.notified_at)await sendPilotNotification(entry,env);
   const confirmation=await env.DB.prepare('SELECT sent_at FROM pilot_confirmation_queue WHERE email=?').bind(email).first();
+  console.info('Pilot confirmation pending:',Boolean(confirmation&&!confirmation.sent_at));
   if(confirmation&&!confirmation.sent_at)await confirmPilotSignup({name:entry.name,email},env);
   // Saving a request must not depend on the notification provider being configured.
   return json({ok:true},200,env,request);
