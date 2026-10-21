@@ -9,7 +9,9 @@ import {analyzeReceipt,analyzeAudio,analyzeText} from './openai.js';
 function corsHeaders(env,request){
   const origin=request?.headers?.get?.('Origin')||'';
   const allowed=env.FRONTEND_URL ? new URL(env.FRONTEND_URL).origin : '';
-  const allow=origin&&allowed&&origin===allowed?origin:allowed;
+  const legacy='https://antonydis.github.io';
+  const approved=origin===allowed||origin===legacy;
+  const allow=approved?origin:allowed;
   return {
     'Access-Control-Allow-Origin':allow||'*',
     'Access-Control-Allow-Methods':'GET,POST,OPTIONS',
