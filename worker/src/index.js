@@ -103,7 +103,7 @@ async function registerPilot(request,env){
   const body=await request.json();
   if(body.website)return json({ok:true},200,env,request);
   const name=String(body.name||'').trim(),email=String(body.email||'').trim().toLowerCase();
-  if(!body.consent||name.length<2||name.length>100||email.length>254||!(/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/).test(email))
+  if(!body.consent||name.length<2||name.length>100||email.length>254||!(/^[^\s@]+@[^\s@]+\.[^\s@]+$/).test(email))
     return json({ok:false,error:'Invalid details or missing consent'},400,env,request);
   await env.DB.prepare('CREATE TABLE IF NOT EXISTS pilot_waitlist (email TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INTEGER NOT NULL, notified_at INTEGER)').run();
   await env.DB.prepare('INSERT OR IGNORE INTO pilot_waitlist(email,name,created_at,notified_at) VALUES(?,?,?,NULL)')
