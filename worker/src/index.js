@@ -97,6 +97,39 @@ async function notifyPendingPilots(env){
   const entries=await env.DB.prepare('SELECT name,email,created_at FROM pilot_waitlist WHERE notified_at IS NULL ORDER BY created_at ASC LIMIT 10').all();
   for(const entry of entries.results||[])await sendPilotNotification(entry,env);
 }
+
+function pilotEmailHtml(name){
+  const safe=String(name).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  return '<!doctype html><html lang="es"><body style="margin:0;background:#f6f5ef;font-family:Arial,sans-serif;color:#20352b;padding:30px 12px"><div style="max-width:540px;margin:auto;background:white;border-radius:16px;padding:36px;border:1px solid #dce5dc"><p style="font-size:13px;letter-spacing:2px;color:#458361;font-weight:bold">MIS GASTOS</p><h1 style="font-size:29px;line-height:1.2;margin:22px 0">¡Ya estás en la lista, '+safe+'!</h1><p style="font-size:16px;line-height:1.7">Recibí tu solicitud para participar en el piloto de Mis Gastos. Gracias por el interés.</p><p style="font-size:16px;line-height:1.7">Estoy abriendo el acceso poco a poco mientras sigo mejorando la experiencia. Te escribiré cuando pueda invitarte.</p><p style="font-size:15px;line-height:1.7">La idea es sencilla: registrar gastos con un mensaje, una foto o una nota de voz, y tenerlos organizados en tu propio Google Sheets.</p><p style="margin-top:30px;color:#718176;font-size:13px">Este correo confirma tu inscripción; todavía no incluye acceso al piloto.</p><p style="border-top:1px solid #e7ece6;padding-top:20px;color:#718176;font-size:12px">Mis Gastos · Un proyecto personal en construcción</p></div></body></html>';
+}
+async function confirmPilotSignup(entry,env){
+  if(!env.RESEND_API_KEY||!env.WAITLIST_FROM_EMAIL)return false;
+  try{
+    const response=await fetch('https://api.resend.com/emails',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        from:env.WAITLIST_FROM_EMAIL,
+        to:[entry.email],
+        subject:'¡Ya estás en la lista! | Mis Gastos',
+        html:pilotEmailHtml(entry.name),
+        text:'¡Hola '+entry.name+'!\n\nRecibí tu solicitud para participar en el piloto de Mis Gastos. Gracias por el interés.\n\nEstoy abriendo el acceso poco a poco mientras sigo mejorando la experiencia. Te escribiré cuando pueda invitarte.\n\nMis Gastos permite registrar gastos con texto, foto o audio por Telegram y organizarlos en tu propio Google Sheets.\n\nEste correo confirma tu inscripción, pero todavía no incluye acceso.\n\nMis Gastos'
+      })
+    });
+    if(!response.ok){console.error('Pilot signup confirmation failed',response.status);return false;}
+    await env.DB.prepare('UPDATE pilot_confirmation_queue SET sent_at=? WHERE email=? AND sent_at IS NULL').bind(Date.now(),entry.email).run();
+    return true;
+  }catch(e){console.error('Pilot confirmation unavailable',e);return false;}
+}
+async function deliverPendingPilotConfirmations(env){
+  if(!env.RESEND_API_KEY||!env.WAITLIST_FROM_EMAIL)return;
+  const result=await env.DB.prepare('SELECT email,name FROM pilot_confirmation_queue WHERE sent_at IS NULL ORDER BY queued_at ASC LIMIT 10').all();
+  for(const entry of result.results||[])await confirmPilotSignup(entry,env);
+}
+async function ensurePilotConfirmationsTable(env){
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS pilot_confirmation_queue (email TEXT PRIMARY KEY, name TEXT NOT NULL, queued_at INTEGER NOT NULL, sent_at INTEGER)').run();
+}
+
 async function registerPilot(request,env){
   const size=Number(request.headers.get('content-length')||0);
   if(size>4096)return json({ok:false,error:'Request too large'},413,env,request);
@@ -108,8 +141,12 @@ async function registerPilot(request,env){
   await env.DB.prepare('CREATE TABLE IF NOT EXISTS pilot_waitlist (email TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INTEGER NOT NULL, notified_at INTEGER)').run();
   await env.DB.prepare('INSERT OR IGNORE INTO pilot_waitlist(email,name,created_at,notified_at) VALUES(?,?,?,NULL)')
     .bind(email,name,Date.now()).run();
+  await ensurePilotConfirmationsTable(env);
+  await env.DB.prepare('INSERT OR IGNORE INTO pilot_confirmation_queue(email,name,queued_at,sent_at) VALUES(?,?,?,NULL)').bind(email,name,Date.now()).run();
   const entry=await env.DB.prepare('SELECT name,email,created_at,notified_at FROM pilot_waitlist WHERE email=?').bind(email).first();
   if(!entry.notified_at)await sendPilotNotification(entry,env);
+  const confirmation=await env.DB.prepare('SELECT sent_at FROM pilot_confirmation_queue WHERE email=?').bind(email).first();
+  if(confirmation&&!confirmation.sent_at)await confirmPilotSignup({name:entry.name,email},env);
   // Saving a request must not depend on the notification provider being configured.
   return json({ok:true},200,env,request);
 }
@@ -167,6 +204,7 @@ export default{
     const now=new Date(event.scheduledTime||Date.now());
     await runReminders(env,send,now);
     await notifyPendingPilots(env);
+    await deliverPendingPilotConfirmations(env);
     if(now.getUTCMinutes()===0)await env.DB.batch([
       env.DB.prepare('DELETE FROM pending WHERE expires_at<?').bind(now.getTime()),
       env.DB.prepare('DELETE FROM link_codes WHERE expires_at<?').bind(now.getTime()),
