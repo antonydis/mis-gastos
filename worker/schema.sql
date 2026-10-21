@@ -50,3 +50,11 @@ CREATE TABLE IF NOT EXISTS reminder_settings (
  last_sent_day TEXT NOT NULL DEFAULT '',
  snooze_until INTEGER NOT NULL DEFAULT 0
 );
+
+-- Pilot-only contacts, separate from personal expense sheets.
+CREATE TABLE IF NOT EXISTS pilot_waitlist (
+  email TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  notified_at INTEGER
+);
