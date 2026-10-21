@@ -58,3 +58,11 @@ CREATE TABLE IF NOT EXISTS pilot_waitlist (
   created_at INTEGER NOT NULL,
   notified_at INTEGER
 );
+
+-- One confirmation email per subscribed address; failed sends remain queued for retry.
+CREATE TABLE IF NOT EXISTS pilot_confirmation_queue (
+  email TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  queued_at INTEGER NOT NULL,
+  sent_at INTEGER
+);
