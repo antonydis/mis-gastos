@@ -69,6 +69,39 @@ async function oauthCallback(url,env){
   }
 }
 
+
+// Pilot registrations are stored separately from spending data. Configure
+// RESEND_API_KEY, WAITLIST_FROM_EMAIL and WAITLIST_NOTIFY_EMAIL as Worker secrets.
+async function registerPilot(request,env){
+  if(!env.RESEND_API_KEY||!env.WAITLIST_FROM_EMAIL||!env.WAITLIST_NOTIFY_EMAIL)
+    return json({ok:false,error:'Waitlist not configured'},503,env,request);
+  const size=Number(request.headers.get('content-length')||0);
+  if(size>4096)return json({ok:false,error:'Request too large'},413,env,request);
+  const body=await request.json();
+  if(body.website)return json({ok:true},200,env,request); // spam honeypot
+  const name=String(body.name||'').trim();
+  const email=String(body.email||'').trim().toLowerCase();
+  if(!body.consent||name.length<2||name.length>100||email.length>254||!(/^[^\s@]+@[^\s@]+\.[^\s@]+$/).test(email))
+    return json({ok:false,error:'Invalid details or missing consent'},400,env,request);
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS pilot_waitlist (email TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INTEGER NOT NULL, notified_at INTEGER)').run();
+  await env.DB.prepare('INSERT OR IGNORE INTO pilot_waitlist(email,name,created_at,notified_at) VALUES(?,?,?,NULL)').bind(email,name,Date.now()).run();
+  const existing=await env.DB.prepare('SELECT notified_at FROM pilot_waitlist WHERE email=?').bind(email).first();
+  if(existing?.notified_at)return json({ok:true},200,env,request);
+  const message=await fetch('https://api.resend.com/emails',{
+    method:'POST',
+    headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json'},
+    body:JSON.stringify({
+      from:env.WAITLIST_FROM_EMAIL,
+      to:[env.WAITLIST_NOTIFY_EMAIL],
+      subject:'Mis Gastos · Nuevo interesado en el piloto',
+      text:'Nueva solicitud para el piloto de Mis Gastos.\nNombre: '+name+'\nCorreo: '+email+'\nFecha (UTC): '+new Date().toISOString()
+    })
+  });
+  if(!message.ok){console.error('Pilot email notification failed',message.status);return json({ok:false,error:'Email notification unavailable'},503,env,request);}
+  await env.DB.prepare('UPDATE pilot_waitlist SET notified_at=? WHERE email=? AND notified_at IS NULL').bind(Date.now(),email).run();
+  return json({ok:true},200,env,request);
+}
+
 function mediaProfile(form,env){
   return {
     currency:String(form.get('currency')||'CAD').toUpperCase(),
@@ -134,6 +167,7 @@ export default{
       if(request.method==='OPTIONS')return new Response(null,{status:204,headers:corsHeaders(env,request)});
       if(url.pathname==='/connection/result')return connectionPage(url);
       if(url.pathname==='/connection/check'){const reason=await connectionIssue(env);return json({ok:!reason,...(reason?{reason}:{})});}
+      if(url.pathname==='/pilot/waitlist'&&request.method==='POST')return await registerPilot(request,env);
       if(url.pathname==='/health')return json({ok:true,service:'mis-gastos-api'},200,env,request);
       if(url.pathname==='/ai/text'&&request.method==='POST')return await analyzeTextRequest(request,env);
       if(url.pathname==='/ai/receipt'&&request.method==='POST')return await analyzeReceiptRequest(request,env);
