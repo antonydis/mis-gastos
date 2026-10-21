@@ -100,7 +100,7 @@ async function notifyPendingPilots(env){
 
 function pilotEmailHtml(name){
   const safe=String(name).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  return '<!doctype html><html lang="es"><body style="margin:0;background:#f6f5ef;font-family:Arial,sans-serif;color:#20352b;padding:30px 12px"><div style="max-width:540px;margin:auto;background:white;border-radius:16px;padding:36px;border:1px solid #dce5dc"><p style="font-size:13px;letter-spacing:2px;color:#458361;font-weight:bold">MIS GASTOS</p><h1 style="font-size:29px;line-height:1.2;margin:22px 0">¡Ya estás en la lista, '+safe+'!</h1><p style="font-size:16px;line-height:1.7">Recibí tu solicitud para participar en el piloto de Mis Gastos. Gracias por el interés.</p><p style="font-size:16px;line-height:1.7">Estoy abriendo el acceso poco a poco mientras sigo mejorando la experiencia. Te escribiré cuando pueda invitarte.</p><p style="font-size:15px;line-height:1.7">La idea es sencilla: registrar gastos con un mensaje, una foto o una nota de voz, y tenerlos organizados en tu propio Google Sheets.</p><p style="margin-top:30px;color:#718176;font-size:13px">Este correo confirma tu inscripción; todavía no incluye acceso al piloto.</p><p style="border-top:1px solid #e7ece6;padding-top:20px;color:#718176;font-size:12px">Mis Gastos · Un proyecto personal en construcción</p></div></body></html>';
+  return '<!doctype html><html lang="es"><body style="margin:0;background:#f6f5ef;font-family:Arial,sans-serif;color:#20352b;padding:28px 12px"><div style="max-width:520px;margin:auto;background:white;border:1px solid #dce5dc;border-radius:14px;padding:32px"><p style="font-size:12px;letter-spacing:2px;font-weight:bold;color:#458361">MIS GASTOS</p><h1 style="font-size:25px;margin:25px 0 18px">Confirmación de inscripción</h1><p>Hola '+safe+',</p><p style="line-height:1.7">Gracias por tu interés en participar en el piloto de Mis Gastos. Hemos recibido correctamente tu inscripción.</p><p style="line-height:1.7">Durante la próxima semana me pondré en contacto contigo para informarte sobre los siguientes pasos.</p><p style="margin-top:26px;line-height:1.7">Saludos,<br><strong>Antony Díaz</strong><br>Mis Gastos</p><p style="border-top:1px solid #e7ece6;padding-top:16px;font-size:12px;color:#718176">Este mensaje confirma tu inscripción; el acceso al piloto se enviará posteriormente.</p></div></body></html>';
 }
 async function confirmPilotSignup(entry,env){
   if(!env.RESEND_API_KEY||!env.WAITLIST_FROM_EMAIL)return false;
@@ -111,9 +111,9 @@ async function confirmPilotSignup(entry,env){
       body:JSON.stringify({
         from:env.WAITLIST_FROM_EMAIL,
         to:[entry.email],
-        subject:'¡Ya estás en la lista! | Mis Gastos',
+        subject:'Confirmación de inscripción | Mis Gastos',
         html:pilotEmailHtml(entry.name),
-        text:'¡Hola '+entry.name+'!\n\nRecibí tu solicitud para participar en el piloto de Mis Gastos. Gracias por el interés.\n\nEstoy abriendo el acceso poco a poco mientras sigo mejorando la experiencia. Te escribiré cuando pueda invitarte.\n\nMis Gastos permite registrar gastos con texto, foto o audio por Telegram y organizarlos en tu propio Google Sheets.\n\nEste correo confirma tu inscripción, pero todavía no incluye acceso.\n\nMis Gastos'
+        text:'Hola '+entry.name+',\\n\\nGracias por tu interés en participar en el piloto de Mis Gastos. Hemos recibido correctamente tu inscripción.\\n\\nDurante la próxima semana me pondré en contacto contigo para informarte sobre los siguientes pasos.\\n\\nSaludos,\\nAntony Díaz\\nMis Gastos\\n\\nEste mensaje confirma tu inscripción; el acceso al piloto se enviará posteriormente.'
       })
     });
     if(!response.ok){console.error('Pilot signup confirmation failed',response.status);return false;}
