@@ -1,201 +1,43 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#0f172a">
-  <meta name="description" content="Registra tus gastos sin convertirlo en una tarea.">
-  <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="icon" href="./icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css">
-  <title>Mis gastos</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f5f3ee"><meta name="description" content="Registra tus gastos desde Telegram con texto, fotos o notas de voz. Recibe recordatorios y mira tus gastos en tu propio Google Sheets.">
+<title>Mis Gastos | Tus gastos, sin complicarte</title>
+<link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./landing.css">
 </head>
 <body>
-  <main class="wrap">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">Mis gastos</p>
-        <h1>¿Qué gastaste?</h1>
-        <p class="tagline">Anota. Mira. Sigue.</p>
-      </div>
-      <div id="googleAccount" class="google-account" hidden>
-        <strong id="googleAccountStatus">Google conectado</strong>
-        <a id="headerSheetLink" href="#" target="_blank" rel="noopener">Abrir mi hoja</a>
-      </div>
-      <button id="googleButton" class="button secondary compact" type="button" hidden>Continuar con Google</button>
-    </header>
-
-    <section id="modeBanner" class="banner" aria-live="polite"></section>
-
-    <section id="telegramLinkPanel" class="telegram-link" hidden aria-live="polite">
-      <p class="eyebrow">Telegram</p>
-      <h2 id="telegramLinkTitle">Conecta tu Google</h2>
-      <p id="telegramLinkText">Esto vincula este chat de Telegram con tu hoja Mis gastos.</p>
-      <button id="telegramLinkButton" class="button primary" type="button">Conectar Google con Telegram</button>
-    </section>
-
-    <section id="pilotWaitlist" aria-labelledby="pilotTitle" style="margin:1.5rem 0;padding:1.5rem;border:1px solid #94a3b8;border-radius:18px;background:#f8fafc;color:#0f172a">
-      <p class="eyebrow">Piloto · Acceso limitado</p>
-      <h2 id="pilotTitle">¿Quieres probar Mis Gastos?</h2>
-      <p>Estoy preparando el acceso para las primeras personas. Déjame tu nombre y correo y te escribiré cuando haya un cupo.</p>
-      <form id="pilotForm" style="display:grid;gap:.75rem;margin-top:1rem">
-        <label for="pilotName">Tu nombre</label>
-        <input id="pilotName" name="name" type="text" autocomplete="name" maxlength="100" required placeholder="¿Cómo te llamas?" style="padding:.7rem;border:1px solid #94a3b8;border-radius:9px">
-        <label for="pilotEmail">Correo electrónico</label>
-        <input id="pilotEmail" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="tunombre@correo.com" style="padding:.7rem;border:1px solid #94a3b8;border-radius:9px">
-        <div aria-hidden="true" style="position:absolute;left:-10000px"><label for="pilotWebsite">Sitio web</label><input id="pilotWebsite" name="website" type="text" autocomplete="off" tabindex="-1"></div>
-        <label style="display:flex;gap:.5rem;align-items:flex-start;font-size:.875rem"><input id="pilotConsent" type="checkbox" required style="margin-top:.25rem"> Acepto que me contacten por correo únicamente sobre el piloto de Mis Gastos. No recibiré publicidad. </label>
-        <button id="pilotSubmit" class="button primary" type="submit">Quiero participar</button>
-        <p id="pilotFeedback" role="status" aria-live="polite" style="margin:0;font-size:.9rem"></p>
-      </form>
-      <p style="font-size:.8rem;margin-top:.75rem">El acceso no es inmediato. Tus datos se usan solo para coordinar el piloto y puedes solicitar que los elimine respondiendo al correo de invitación.</p>
-    </section>
-    <section class="composer" aria-labelledby="register-title">
-      <label id="register-title" for="expenseText">Escríbelo como te salga.</label>
-      <textarea id="expenseText" rows="4" placeholder="Ej. 850 en gasolina y 300 en café"></textarea>
-      <div class="capture-actions" aria-label="Otras formas de registrar">
-        <button id="photoButton" class="capture-button" type="button">Foto de recibo</button>
-        <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
-        <button id="audioButton" class="capture-button" type="button">Hablar</button>
-      </div>
-      <div class="hint-row">
-        <span>Escribe, toma una foto o cuéntalo con tu voz.</span>
-      </div>
-      <button id="registerButton" class="button primary" type="button">Registrar</button>
-      <div class="quick-examples" aria-label="Ejemplos">
-        <button type="button" data-example="850 en gasolina">850 en gasolina</button>
-        <button type="button" data-example="Ayer gasté 2300 en supermercado y 450 en almuerzo">Ayer: supermercado y almuerzo</button>
-      </div>
-    </section>
-
-    <section id="clarification" class="clarification" hidden aria-live="polite">
-      <p class="eyebrow">Me falta un dato</p>
-      <h2 id="clarificationQuestion">Antes de guardar…</h2>
-      <div class="clarification-form">
-        <input id="clarificationAnswer" type="text" autocomplete="off" placeholder="Escribe la respuesta">
-        <button id="clarificationButton" class="button primary" type="button">Continuar</button>
-      </div>
-    </section>
-
-    <section id="proposal" class="proposal" hidden aria-live="polite">
-      <div class="section-head">
-        <div>
-          <p class="eyebrow">Antes de guardar</p>
-          <h2>¿Está bien así?</h2>
-        </div>
-      </div>
-      <div id="proposalRows" class="proposal-rows"></div>
-      <div class="proposal-actions">
-        <button id="cancelProposal" class="button secondary" type="button">Cambiar</button>
-        <button id="confirmProposal" class="button primary" type="button">Guardar</button>
-      </div>
-    </section>
-
-    <section class="summary" aria-labelledby="summary-title">
-      <div class="section-head">
-        <div>
-          <p class="eyebrow">Este mes</p>
-          <h2 id="summary-title">Así va tu mes</h2>
-        </div>
-        <a id="sheetLink" class="text-link" href="#" target="_blank" rel="noopener" hidden>Abrir mi hoja</a>
-      </div>
-      <div class="stats">
-        <article class="stat">
-          <span>Total</span>
-          <strong id="monthTotal">0</strong>
-        </article>
-        <article class="stat">
-          <span>Donde más gastas</span>
-          <strong id="topCategory">—</strong>
-        </article>
-      </div>
-      <div id="categoryList" class="category-list"></div>
-    </section>
-
-    <section class="questions" aria-labelledby="questions-title">
-      <div class="section-head">
-        <div>
-          <p class="eyebrow">Entender</p>
-          <h2 id="questions-title">Preguntas rápidas</h2>
-        </div>
-      </div>
-      <div class="question-grid">
-        <button type="button" data-question="month">¿Cuánto gasté este mes?</button>
-        <button type="button" data-question="top">¿En qué gasto más?</button>
-        <button type="button" data-question="compare">¿Gasto más que el mes pasado?</button>
-        <button type="button" data-question="largest">¿Cuáles fueron mis gastos más grandes?</button>
-        <button type="button" data-question="review">¿Hay algo que debería mirar?</button>
-      </div>
-      <div id="answer" class="answer" hidden></div>
-    </section>
-
-    <section class="recent" aria-labelledby="recent-title">
-      <div class="section-head">
-        <div>
-          <p class="eyebrow">Últimos movimientos</p>
-          <h2 id="recent-title">Últimos gastos</h2>
-        </div>
-      </div>
-      <div id="recentList" class="recent-list"></div>
-    </section>
-
-    <details class="settings">
-      <summary>Configuración</summary>
-      <div class="settings-body">
-        <label for="currencySelect">Moneda principal</label>
-        <select id="currencySelect">
-          <option value="NIO">Córdoba (NIO)</option>
-          <option value="USD">Dólar (USD)</option>
-          <option value="CAD">Dólar canadiense (CAD)</option>
-          <option value="EUR">Euro (EUR)</option>
-          <option value="GTQ">Quetzal (GTQ)</option>
-          <option value="MXN">Peso mexicano (MXN)</option>
-        </select>
-        <p id="localModelStatus" class="muted">La comprensión local se descarga una vez y luego queda en este dispositivo.</p>
-        <button id="prepareModelButton" class="button secondary" type="button">Preparar comprensión local</button>
-        <p class="muted">Foto y voz se analizan mediante el servicio conectado. Tus gastos se guardan en tu Google Sheet.</p>
-        <button id="clearLocalButton" class="button danger" type="button">Borrar prueba local</button>
-      </div>
-    </details>
-
-    <p id="status" class="status" aria-live="polite"></p>
-  </main>
-
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="./config.js"></script>
-  <script type="module" src="./app.js"></script>
-  <script>
-    (function () {
-      const form = document.getElementById('pilotForm');
-      const feedback = document.getElementById('pilotFeedback');
-      const button = document.getElementById('pilotSubmit');
-      form.addEventListener('submit', async function (event) {
-        event.preventDefault();
-        if (!form.reportValidity()) return;
-        button.disabled = true;
-        feedback.textContent = 'Enviando solicitud…';
-        try {
-          const api = window.MIS_GASTOS_CONFIG?.apiBaseUrl;
-          if (!api) throw new Error('Servicio no disponible');
-          const response = await fetch(api.replace(/\/$/, '') + '/pilot/waitlist', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({
-              name: document.getElementById('pilotName').value.trim(),
-              email: document.getElementById('pilotEmail').value.trim(),
-              website: document.getElementById('pilotWebsite').value,
-              consent: document.getElementById('pilotConsent').checked
-            })
-          });
-          if (!response.ok) throw new Error('No se pudo registrar');
-          form.reset();
-          feedback.textContent = '¡Listo! Tu interés quedó registrado. Te escribiré cuando pueda darte acceso.';
-        } catch (error) {
-          feedback.textContent = 'No pude registrar tu solicitud por ahora. Inténtalo de nuevo más tarde.';
-        } finally { button.disabled = false; }
-      });
-    })();
-  </script>
-</body>
-</html>
-
+<a class="skip" href="#contenido">Ir al contenido</a>
+<header class="nav wrap"><a class="brand" href="./" aria-label="Mis Gastos, inicio"><span class="brandmark">↗</span> mis<span>gastos</span><span class="branddot">.</span></a><nav aria-label="Principal"><a href="#como-funciona">Cómo funciona</a><a href="#beneficios">Beneficios</a><a class="nav-cta" href="#piloto">Unirme al piloto <span aria-hidden="true">↗</span></a></nav></header>
+<main id="contenido">
+<section class="hero wrap">
+ <div class="hero-copy"><div class="pill"><span class="live-dot"></span> Un proyecto personal en evolución <span class="pill-arrow">↗</span></div>
+ <h1>Gastar es fácil.<br><em>Registrarlo también</em><br>debería serlo<span class="period">.</span></h1>
+ <p class="intro">Olvídate de llenar tablas al final del día. Manda un mensaje, una foto de tu recibo o una nota de voz por Telegram. <strong>Mis Gastos organiza todo en tu propio Google Sheets.</strong></p>
+ <div class="hero-actions"><a href="#piloto" class="button button-primary">Quiero probarlo <span aria-hidden="true">↗</span></a><a href="#como-funciona" class="subtle-link">Descubre cómo funciona <span aria-hidden="true">↓</span></a></div>
+ <p class="mini-note"><span aria-hidden="true">✳</span> Sin otra app que aprender. Acceso inicial por invitación.</p></div>
+ <div class="hero-visual" aria-label="Demostración ilustrativa de un gasto que viaja de Telegram a una hoja de cálculo">
+ <div class="phone"><div class="phone-top"><span class="back">‹</span><span class="avatar">↗</span><span class="chat-head">Mis Gastos <small>bot · Telegram</small></span><span class="dots">⋯</span></div>
+ <div class="chat-day">Hoy</div><div class="bubble user">Hoy gasté $18 en almuerzo y $5 en café <span>12:42 ✓✓</span></div>
+ <div class="bubble bot"><div class="bot-title">✓ Gasto registrado</div><div>Almuerzo · $18.00</div><div>Café · $5.00</div><div class="bot-foot">Guardado en tu Google Sheets</div><span>12:42</span></div>
+ <div class="voice"><span>🎤</span><div class="voice-line"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><small>0:08</small></div>
+ <div class="phone-input">Mensaje <span>➤</span></div></div>
+ <div class="floating-sheet"><div class="floating-top"><span class="sheet-icon">▦</span><div>Mi hoja de gastos<small>Google Sheets</small></div><strong>✓</strong></div><div class="sheet-cols"><span>Fecha</span><span>Descripción</span><span>Monto</span></div><div class="sheet-row"><span>20 oct</span><span>Almuerzo</span><b>$18.00</b></div><div class="sheet-row"><span>20 oct</span><span>Café</span><b>$5.00</b></div></div>
+ <div class="floating-label">Tu información, en tu cuenta de Google <span>↗</span></div>
+ </div>
+</section>
+<div class="ribbon"><div class="wrap ribbon-inner"><span>MENOS FRICCIÓN</span><span class="star">✳</span><span>MÁS CLARIDAD</span><span class="star">✳</span><span>TUS DATOS, TU HOJA</span><span class="star">✳</span><span>MENOS FRICCIÓN</span></div></div>
+<section id="como-funciona" class="section wrap"><div class="section-kicker">01 / Así de simple</div><div class="section-head"><h2>Tu rutina de gastos,<br><em>sin complicaciones.</em></h2><p>No necesitas aprender otra plataforma. Usa Telegram como siempre, y deja que el resto se organice solo.</p></div>
+<div class="steps"><article class="step"><span class="step-num">01</span><div class="step-icon">✎</div><h3>Cuéntalo como quieras</h3><p>Escribe lo que gastaste, envía una foto del recibo o dicta una nota de voz. No hace falta rellenar un formulario.</p><div class="example">“Gasté $32 en supermercado”</div></article><article class="step"><span class="step-num">02</span><div class="step-icon">◷</div><h3>Recibe un recordatorio</h3><p>Elige la hora a la que quieres que Telegram te recuerde revisar los gastos del día. Y si ya lo hiciste, no te vuelve a molestar.</p><div class="example">Todos los días · 8:30 p. m.</div></article><article class="step"><span class="step-num">03</span><div class="step-icon">▦</div><h3>Todo en tu propia hoja</h3><p>Los movimientos se organizan en tu Google Sheets, con categorías y resúmenes para entender adónde va tu dinero.</p><div class="example">Fecha · Categoría · Monto</div></article></div></section>
+<section id="beneficios" class="why"><div class="wrap why-grid"><div><div class="section-kicker">02 / La idea detrás</div><h2>No necesitas otra app para <em>tener más claridad.</em></h2><p>La mayoría ya usamos hojas de cálculo y aplicaciones de mensajería. ¿Por qué no conectarlas para que registrar tus gastos deje de ser una tarea pendiente?</p><div class="why-tag">Pensado primero para personas reales, no para hojas de Excel perfectas.</div></div><div class="benefit-grid"><article><div class="benefit-icon">◎</div><h3>Un hábito más fácil</h3><p>Registra los gastos cuando ocurren, sin esperar a sentarte frente al computador.</p></article><article><div class="benefit-icon">⌁</div><h3>La hora la eliges tú</h3><p>Recordatorios opcionales y configurables para que nada se te pase.</p></article><article><div class="benefit-icon">▦</div><h3>En tu Google Drive</h3><p>Los movimientos definitivos viven en una hoja de tu propia cuenta, no en una base central de gastos.</p></article><article><div class="benefit-icon">↗</div><h3>Entiende tus patrones</h3><p>Consulta el total del mes y compara tus categorías con tablas y gráficos simples.</p></article></div></div></section>
+<section class="quote-section wrap"><div class="quote-mark">“</div><blockquote>La mejor tecnología no es la que te obliga a cambiar tus hábitos. Es la que <em>se adapta a ellos.</em></blockquote><p>Un pequeño proyecto personal que nació para simplificar el registro de gastos.</p></section>
+<section id="piloto" class="pilot"><div class="wrap pilot-grid"><div><div class="section-kicker light">03 / Acceso anticipado</div><h2>¿Te gustaría<br><em>probarlo?</em></h2><p>Estoy abriendo un piloto con pocas personas para seguir mejorando Mis Gastos. Si te interesa, déjame tus datos y te escribiré cuando pueda darte acceso.</p><div class="pilot-facts"><div><span>↗</span> Gratis durante el piloto</div><div><span>↗</span> Solo nombre y correo</div><div><span>↗</span> Sin compromiso</div></div></div>
+<div class="form-card"><span class="form-tag">LISTA DE ESPERA</span><h3>Apúntate al piloto</h3><p>Te contactaré personalmente cuando haya un lugar para ti.</p><form id="pilotForm"><label for="pilotName">¿Cómo te llamas?</label><input id="pilotName" name="name" type="text" autocomplete="name" minlength="2" maxlength="100" placeholder="Tu nombre" required>
+<label for="pilotEmail">Tu correo electrónico</label><input id="pilotEmail" name="email" type="email" autocomplete="email" maxlength="254" placeholder="tu@correo.com" required>
+<div class="honeypot" aria-hidden="true"><label for="pilotWebsite">Sitio web</label><input id="pilotWebsite" name="website" type="text" tabindex="-1" autocomplete="off"></div>
+<label class="consent"><input id="pilotConsent" type="checkbox" required><span>Autorizo que me contacten por correo exclusivamente sobre el piloto de Mis Gastos.</span></label>
+<button id="pilotSubmit" type="submit" class="button button-primary form-button">Quiero participar <span aria-hidden="true">↗</span></button><p class="feedback" id="pilotFeedback" role="status" aria-live="polite"></p></form><div class="form-fine">Tus datos se usan solo para gestionar el piloto. Puedes solicitar que se eliminen escribiendo en respuesta al correo de invitación. El registro no garantiza acceso inmediato.</div></div></div></section>
+</main>
+<footer class="footer wrap"><a class="brand" href="./"><span class="brandmark">↗</span> mis<span>gastos</span><span class="branddot">.</span></a><div>Hecho con curiosidad, para hacer la vida un poquito más sencilla.</div><a href="https://github.com/antonydis/mis-gastos" target="_blank" rel="noopener noreferrer">Proyecto en GitHub ↗</a></footer>
+<script src="./config.js"></script><script src="./landing.js" defer></script>
+</body></html>
