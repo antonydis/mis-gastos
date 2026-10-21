@@ -5,7 +5,7 @@ import { join, dirname } from 'node:path';
 
 const output = 'dist';
 const assets = [
-  'index.html', 'styles.css', 'config.js', 'app.js',
+  'index.html', 'app.html', 'landing.css', 'landing.js', 'styles.css', 'config.js', 'app.js',
   'sw.js', 'manifest.webmanifest', 'icon.svg',
   'worker/src/records.js', 'worker/src/sheet-layout.js',
   'worker/src/sheet-summary.js', 'worker/src/sheet-breakdown.js',
