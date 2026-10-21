@@ -34,6 +34,22 @@
       <button id="telegramLinkButton" class="button primary" type="button">Conectar Google con Telegram</button>
     </section>
 
+    <section id="pilotWaitlist" aria-labelledby="pilotTitle" style="margin:1.5rem 0;padding:1.5rem;border:1px solid #94a3b8;border-radius:18px;background:#f8fafc;color:#0f172a">
+      <p class="eyebrow">Piloto · Acceso limitado</p>
+      <h2 id="pilotTitle">¿Quieres probar Mis Gastos?</h2>
+      <p>Estoy preparando el acceso para las primeras personas. Déjame tu nombre y correo y te escribiré cuando haya un cupo.</p>
+      <form id="pilotForm" style="display:grid;gap:.75rem;margin-top:1rem">
+        <label for="pilotName">Tu nombre</label>
+        <input id="pilotName" name="name" type="text" autocomplete="name" maxlength="100" required placeholder="¿Cómo te llamas?" style="padding:.7rem;border:1px solid #94a3b8;border-radius:9px">
+        <label for="pilotEmail">Correo electrónico</label>
+        <input id="pilotEmail" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="tunombre@correo.com" style="padding:.7rem;border:1px solid #94a3b8;border-radius:9px">
+        <div aria-hidden="true" style="position:absolute;left:-10000px"><label for="pilotWebsite">Sitio web</label><input id="pilotWebsite" name="website" type="text" autocomplete="off" tabindex="-1"></div>
+        <label style="display:flex;gap:.5rem;align-items:flex-start;font-size:.875rem"><input id="pilotConsent" type="checkbox" required style="margin-top:.25rem"> Acepto que me contacten por correo únicamente sobre el piloto de Mis Gastos. No recibiré publicidad. </label>
+        <button id="pilotSubmit" class="button primary" type="submit">Quiero participar</button>
+        <p id="pilotFeedback" role="status" aria-live="polite" style="margin:0;font-size:.9rem"></p>
+      </form>
+      <p style="font-size:.8rem;margin-top:.75rem">El acceso no es inmediato. Tus datos se usan solo para coordinar el piloto y puedes solicitar que los elimine respondiendo al correo de invitación.</p>
+    </section>
     <section class="composer" aria-labelledby="register-title">
       <label id="register-title" for="expenseText">Escríbelo como te salga.</label>
       <textarea id="expenseText" rows="4" placeholder="Ej. 850 en gasolina y 300 en café"></textarea>
@@ -148,6 +164,38 @@
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="./config.js"></script>
   <script type="module" src="./app.js"></script>
+  <script>
+    (function () {
+      const form = document.getElementById('pilotForm');
+      const feedback = document.getElementById('pilotFeedback');
+      const button = document.getElementById('pilotSubmit');
+      form.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+        button.disabled = true;
+        feedback.textContent = 'Enviando solicitud…';
+        try {
+          const api = window.MIS_GASTOS_CONFIG?.apiBaseUrl;
+          if (!api) throw new Error('Servicio no disponible');
+          const response = await fetch(api.replace(/\/$/, '') + '/pilot/waitlist', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({
+              name: document.getElementById('pilotName').value.trim(),
+              email: document.getElementById('pilotEmail').value.trim(),
+              website: document.getElementById('pilotWebsite').value,
+              consent: document.getElementById('pilotConsent').checked
+            })
+          });
+          if (!response.ok) throw new Error('No se pudo registrar');
+          form.reset();
+          feedback.textContent = '¡Listo! Tu interés quedó registrado. Te escribiré cuando pueda darte acceso.';
+        } catch (error) {
+          feedback.textContent = 'No pude registrar tu solicitud por ahora. Inténtalo de nuevo más tarde.';
+        } finally { button.disabled = false; }
+      });
+    })();
+  </script>
 </body>
 </html>
 
