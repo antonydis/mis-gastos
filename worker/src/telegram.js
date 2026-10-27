@@ -22,7 +22,7 @@ async function call(method,payload,env){
   return d.result;
 }
 
-const menu={keyboard:[[{text:'🧾 Registrar gasto'},{text:'📥 Importar movimientos'}],[{text:'📊 Este mes'},{text:'🏷 Categorías'}],[{text:'📝 Pendientes'},{text:'📄 Mi hoja'}],[{text:'⚙️ Ajustes'}]],resize_keyboard:true};
+const menu={keyboard:[[{text:'🧾 Registrar gasto'},{text:'📥 Importar movimientos'}],[{text:'📊 Este mes'},{text:'🏷 Categorías'}],[{text:'🧩 ¿En qué gasto?'},{text:'📅 Resumen semanal'}],[{text:'📝 Pendientes'},{text:'📄 Mi hoja'}],[{text:'⚙️ Ajustes'}]],resize_keyboard:true};
 const help='Envíame un gasto por texto, foto o audio.\nEjemplo: «Ayer pagué 25 en supermercado con mi tarjeta RBC».\nPara varios gastos, envía una imagen o PDF.\nLos botones te permiten ver tus totales, corregir un gasto o abrir tu hoja.';
 export async function send(chatId,text,env,reply_markup=menu){
   text=translateMessage(text,env.BOT_LANGUAGE);reply_markup=translateMarkup(reply_markup,env.BOT_LANGUAGE);
@@ -348,6 +348,21 @@ async function handleCallback(cb,env){
     await env.DB.prepare('UPDATE user_links SET currency=? WHERE telegram_user_id=?').bind(currency,String(cb.from.id)).run();
     return send(String(cb.from.id),'Moneda principal: '+currency+'. Si un gasto está en otra moneda, indícala al enviarlo.',env);
   }
+  if(cb.data?.startsWith('weekly:')){
+    const uid=String(cb.from.id),chat=String(cb.message?.chat?.id||uid);
+    const link=await userLink(uid,env);
+    if(!link)return send(chat,'Conecta Google con /link para continuar.',env);
+    const action=cb.data.split(':')[1];
+    if(action==='on'||action==='off'){
+      await weeklyReportPreference(uid,action==='on',env);
+      return send(chat,action==='on'?'Resumen semanal activado. Lo recibirás cada lunes a las 09:00, hora local.':'Resumen semanal desactivado.',env);
+    }
+    if(action==='preview'){
+      try{return send(chat,await reportForLink(link,env,'week'),env);}
+      catch(error){console.error('Weekly preview failed',error);return send(chat,'No pude consultar tu hoja ahora.',env);}
+    }
+    return;
+  }
   if(cb.data?.startsWith('expense:later:'))return send(String(cb.from.id),'Tu gasto está guardado. Los datos extra son opcionales.',env);
   if(!cb.data?.startsWith('expense:undo:'))return;
   const uid=String(cb.from.id);
@@ -395,6 +410,8 @@ export async function handleUpdate(update,env){
 
   if(!link)return createLink(chat,uid,env);
   if(/^\/perfil\b/i.test(text))return startProfile(chat,env,send);
+  if(text==='📅 Resumen semanal')return send(chat,'El resumen semanal muestra cuánto gastaste entre lunes y domingo y qué porcentaje corresponde a Carro, Diversión y otras áreas. ¿Quieres recibirlo automáticamente cada lunes a las 09:00 (hora local)?',env,{inline_keyboard:[[{text:'Activar resumen semanal',callback_data:'weekly:on'},{text:'Desactivar',callback_data:'weekly:off'}],[{text:'Ver última semana',callback_data:'weekly:preview'}]]});
+  if(text==='🧩 ¿En qué gasto?')return send(chat,'Aquí agrupamos categorías relacionadas para ver en qué áreas gastas. Por ejemplo: Carro incluye gasolina, seguro y leasing; Diversión incluye restaurantes, salidas y entretenimiento.\n\n'+await reportForLink(link,env,'month'),env);
   if(/^\/semanal_off\b/i.test(text)){await weeklyReportPreference(uid,false,env);return send(chat,'Reporte semanal desactivado. Puedes activarlo con /semanal.',env);}
   if(/^\/semanal\b/i.test(text)){await weeklyReportPreference(uid,true,env);return send(chat,'Reporte semanal activado. Cada lunes a las 09:00 (tu hora local) recibirás el resumen de la semana anterior. Usa /semanal_off para pausarlo.',env);}
   if(/^\/grupos\b/i.test(text)){
