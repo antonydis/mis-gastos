@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { parseExpense } from "../worker/src/utils.js";
 
 const app = await readFile(new URL("../app.js", import.meta.url), "utf8");
-const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+const html = await readFile(new URL("../app.html", import.meta.url), "utf8");
 const api = await readFile(new URL("../worker/src/openai.js", import.meta.url), "utf8");
 const worker = await readFile(new URL("../worker/src/index.js", import.meta.url), "utf8");
 
