@@ -1,4 +1,5 @@
 import {runReminders} from './reminders.js';
+import {runWeeklyReports} from './weekly-report.js';
 import {preferences} from './preferences.js';
 import {connectionIssue,connectionPage} from './connection.js';
 import {googleAuthUrl,exchangeCode,ensureSheet} from './google.js';
@@ -205,6 +206,7 @@ export default{
   async scheduled(event,env){
     const now=new Date(event.scheduledTime||Date.now());
     await runReminders(env,send,now);
+    await runWeeklyReports(env,send,now);
     await notifyPendingPilots(env);
     await deliverPendingPilotConfirmations(env);
     if(now.getUTCMinutes()===0)await env.DB.batch([
