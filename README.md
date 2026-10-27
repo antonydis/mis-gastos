@@ -71,6 +71,16 @@ Las fórmulas nativas leen Movimientos con rangos abiertos: al registrar, correg
 
 El bot prepara esta pestaña en hojas existentes al consultar o guardar; la web comparte el mismo código. Su creación es idempotente, se amplía el espacio de cálculo cuando crece la hoja, y no se sobrescriben pestañas personales con el mismo nombre. Solo se añaden las gráficas tras leer la salida numérica de las fórmulas, porque Sheets puede descartar una serie aún vacía durante la creación. Si preparar el resumen falla, el registro del gasto puede seguir funcionando.
 
+## Reportes por Telegram
+
+- `/semanal`: activa el reporte semanal opt-in. El lunes a las 09:00 de la zona horaria de tu perfil se envía el balance de lunes a domingo de la semana anterior, por moneda y por grupo de gastos, con porcentajes.
+- `/semanal_off`: desactiva los reportes automáticos.
+- `/grupos`: consulta el acumulado del mes en curso, con grupos y detalle de subcategorías para **Carro** y **Diversión**.
+- Los grupos se calculan a partir de la categoría y de palabras claras en la descripción. Por ejemplo, gasolina, seguro del auto, leasing, estacionamiento y peajes se agrupan en Carro; restaurantes, entretenimiento y salidas en Diversión. La categoría original en Google Sheets no se altera.
+- Las monedas originales no se mezclan. Una compra en otra moneda aparece en un total separado y con porcentajes propios.
+- La entrega programada es de mejor esfuerzo: se reserva el envío antes de contactar Telegram para evitar duplicados en ejecuciones concurrentes. Ante errores de conexión puede perderse un reporte, que no se recupera automáticamente.
+- La opción semanal queda desactivada hasta usar `/semanal`. No se copian gastos a D1, que solo guarda la preferencia y la semana de último envío.
+
 ## Consultas
 
 Este mes y Por categoría leen el Sheet real y calculan sus resultados mediante código. Incluyen total, número de gastos y categoría principal por moneda. Las monedas se muestran separadas, sin sumarlas. Se avisa de conversiones ausentes, gastos en Otros incluidos, filas del mes con monto/moneda inválidos excluidas y filas sin fecha que no pueden asignarse a un mes. Otros periodos y consultas arbitrarias aún no están implementados. La interfaz y las confirmaciones del bot están en español e inglés; las categorías y encabezados de Sheets mantienen su estructura canónica en español.
