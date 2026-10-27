@@ -3,8 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "check": "node --check app.js && node --check config.js && node --check sw.js && node --check worker/src/index.js && node --check worker/src/utils.js && node --check worker/src/google.js && node --check worker/src/telegram.js && node --check worker/src/model.js && node --check worker/src/openai.js && node --check worker/src/summary.js && node --check worker/src/records.js && node --check worker/src/connection.js && node --check worker/src/preferences.js && node --check worker/src/i18n.js && node --check worker/src/profile.js && node --check worker/src/sheet-layout.js && node --check worker/src/reminders.js && node --check worker/src/sheet-summary.js && node --check worker/src/sheet-breakdown.js",
-    "test": "node tests/media-pipeline.test.mjs && node tests/telegram-flow.test.mjs && node tests/operational.test.mjs && node tests/records.test.mjs && node tests/product.test.mjs && node tests/reminders.test.mjs && node tests/sheet-summary.test.mjs",
+    "check": "node --check app.js && node --check config.js && node --check sw.js && node --check worker/src/index.js && node --check worker/src/utils.js && node --check worker/src/google.js && node --check worker/src/telegram.js && node --check worker/src/model.js && node --check worker/src/openai.js && node --check worker/src/summary.js && node --check worker/src/records.js && node --check worker/src/connection.js && node --check worker/src/preferences.js && node --check worker/src/i18n.js && node --check worker/src/profile.js && node --check worker/src/sheet-layout.js && node --check worker/src/reminders.js && node --check worker/src/sheet-summary.js && node --check worker/src/sheet-breakdown.js && node --check worker/src/weekly-report.js",
+    "test": "node tests/media-pipeline.test.mjs && node tests/telegram-flow.test.mjs && node tests/operational.test.mjs && node tests/records.test.mjs && node tests/product.test.mjs && node tests/reminders.test.mjs && node tests/sheet-summary.test.mjs && node tests/weekly-report.test.mjs",
     "deploy:worker": "wrangler deploy"
   },
   "devDependencies": {
