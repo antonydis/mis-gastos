@@ -9,8 +9,8 @@ assert.equal(expenseGroup(row('2026-10-20','Restaurantes',25,'Almuerzo')),'Diver
 assert.equal(expenseGroup(row('2026-10-20','Transporte',10,'Metro')),'Transporte');
 const rows=[row('2026-10-20','Gasolina',40,'Gasolina'),row('2026-10-21','Servicios',160,'Seguro auto'),row('2026-10-22','Restaurantes',50,'Restaurante'),row('2026-10-23','Supermercado',50,'Mercado'),row('2026-10-24','Gasolina',10,'Gasolina','USD'),row('2026-10-12','Gasolina',999,'Antiguo')];
 const output=groupedReport(rows,'2026-10-20','2026-10-26','Semana');
-assert.match(output,/200,00.*80,0%/);
-assert.match(output,/50,00.*20,0%/);
+assert.match(output,/200,00.*66,7%/);
+assert.match(output,/50,00.*16,7%/);
 assert.match(output,/Las monedas se presentan por separado/);
 assert.doesNotMatch(output,/999/);
 assert.match(output,/Carro/);
