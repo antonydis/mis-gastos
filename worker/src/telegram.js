@@ -6,6 +6,7 @@ import {decrypt,encrypt,money,randomCode} from './utils.js';
 import {appendExpenses,deleteExpensesByIds,refreshAccess,readExpenses,correctExpense} from './google.js';
 import {analyzeText,analyzeReceipt,analyzeAudio,analyzeDocument,transcribeAudio} from './openai.js';
 import {queryKind,monthlySummary} from './summary.js';
+import {weeklyReportPreference,reportForLink} from './weekly-report.js';
 
 const LINK_TTL=15*60*1000;
 const PENDING_TTL=30*60*1000;
@@ -30,7 +31,7 @@ export async function send(chatId,text,env,reply_markup=menu){
 }
 
 export async function setupWebhook(env){
-  await call('setMyCommands',{commands:[{command:'start',description:'Conectar Google y empezar'},{command:'mes',description:'Ver gastos de este mes'},{command:'categorias',description:'Ver gastos por categoría'},{command:'corregir',description:'Corregir un gasto'},{command:'perfil',description:'Moneda y hora local'},{command:'recordatorios',description:'Configurar recordatorios diarios'},{command:'idioma',description:'Español / English'},{command:'hoja',description:'Abrir mi Google Sheet'},{command:'link',description:'Volver a conectar Google'},{command:'cancelar',description:'Cancelar sin cambiar tus gastos'},{command:'ayuda',description:'Cómo usar Mis gastos'}]},env);
+  await call('setMyCommands',{commands:[{command:'start',description:'Conectar Google y empezar'},{command:'mes',description:'Ver gastos de este mes'},{command:'grupos',description:'Ver Carro, Diversión y otros grupos'},{command:'semanal',description:'Recibir resumen semanal los lunes'},{command:'semanal_off',description:'Desactivar resumen semanal'},{command:'categorias',description:'Ver gastos por categoría'},{command:'corregir',description:'Corregir un gasto'},{command:'perfil',description:'Moneda y hora local'},{command:'recordatorios',description:'Configurar recordatorios diarios'},{command:'idioma',description:'Español / English'},{command:'hoja',description:'Abrir mi Google Sheet'},{command:'link',description:'Volver a conectar Google'},{command:'cancelar',description:'Cancelar sin cambiar tus gastos'},{command:'ayuda',description:'Cómo usar Mis gastos'}]},env);
   return call('setWebhook',{
     url:env.PUBLIC_BASE_URL.replace(/\/$/,'')+'/telegram/webhook',
     secret_token:env.TELEGRAM_WEBHOOK_SECRET,
@@ -394,6 +395,12 @@ export async function handleUpdate(update,env){
 
   if(!link)return createLink(chat,uid,env);
   if(/^\/perfil\b/i.test(text))return startProfile(chat,env,send);
+  if(/^\/semanal_off\b/i.test(text)){await weeklyReportPreference(uid,false,env);return send(chat,'Reporte semanal desactivado. Puedes activarlo con /semanal.',env);}
+  if(/^\/semanal\b/i.test(text)){await weeklyReportPreference(uid,true,env);return send(chat,'Reporte semanal activado. Cada lunes a las 09:00 (tu hora local) recibirás el resumen de la semana anterior. Usa /semanal_off para pausarlo.',env);}
+  if(/^\/grupos\b/i.test(text)){
+    try{return send(chat,await reportForLink(link,env,'month'),env);}
+    catch(error){console.error('Grouped report failed',error);return send(chat,'No pude leer los gastos de tu hoja. Inténtalo más tarde.',env);}
+  }
   if(/^\/recordatorios\b/i.test(text)){try{return await reminderSettings(uid,chat,env,send);}catch(error){console.error('Reminder settings failed',error);return send(chat,'No pude guardar el recordatorio. Inténtalo otra vez desde Ajustes.',env);}}
 
   if (/^\/(help|ayuda)\b/i.test(text)||text==='❓ Ayuda')return send(chat,help,env);
