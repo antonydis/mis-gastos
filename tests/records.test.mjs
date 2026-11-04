@@ -108,6 +108,8 @@ try{
  await handleUpdate(callback(cancelAction),env);assert.equal(appends,beforeImport+1);assert.match(messages.at(-1).text,/Cancelado/);
  await handleUpdate(callback('language:en'),env);assert.equal(language,'en');assert.match(messages.at(-1).text,/English it is/);
  await handleUpdate(text('🧾 Add an expense'),env);assert.match(messages.at(-1).text,/Send an expense/);assert.ok(messages.at(-1).reply_markup.keyboard[0].some(x=>x.text==='🧾 Add an expense'));
+ const currentDate=new Intl.DateTimeFormat('en-CA',{timeZone:link.timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ rows[1][1]=currentDate;
  await handleUpdate(text('How much have I spent this month?'),env);assert.match(messages.at(-1).text,/Expenses for/);
  await handleUpdate(text('📥 Multiple expenses'),env);assert.match(messages.at(-1).text,/Up to 25 expenses/);
  await handleUpdate(text('📝 Add details'),env);assert.match(messages.at(-1).text,/Which expense would you like to correct/);

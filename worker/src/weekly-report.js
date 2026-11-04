@@ -93,6 +93,6 @@ export async function runWeeklyReports(env,send,now=new Date()){
    if(claim.meta?.changes!==1)continue;
    const message=await reportForLink(u,env,'week',now);
    await send(u.chat_id,message,env,null);
-  }catch(error){console.error('Weekly report failed',u.telegram_user_id,error);}
+  }catch(error){console.error('Weekly report failed');}
  }
 }

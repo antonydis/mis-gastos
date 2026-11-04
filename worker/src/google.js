@@ -12,10 +12,10 @@ async function token(values){const r=await fetch('https://oauth2.googleapis.com/
 async function g(url,access,options={}){const r=await fetch(url,{...options,headers:{Authorization:'Bearer '+access,'Content-Type':'application/json',...(options.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok){const error=new Error(d.error?.message||'Google API failed');error.googleService=new URL(url).hostname.includes('sheets')?'sheets':'drive';error.googleReason=d.error?.details?.find(x=>x.reason)?.reason||d.error?.errors?.[0]?.reason;error.httpStatus=r.status;throw error;}return d}
 async function prepareSummary(sheetId,access){
   try{await ensureSummarySheet(sheetId,(url,options)=>g(url,access,options));}
-  catch(error){console.error('Sheet summary setup failed',error);}
+  catch(error){console.error('Sheet summary setup failed');}
 }
 export async function ensureSheet(access,env){
-  const q="appProperties has { key='mis_gastos' and value='v1' } and trashed=false";
+  const q="appProperties has { key='mis_gastos' and value='v1' } and 'me' in owners and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
   const f=await g('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&spaces=drive&fields=files(id,name,webViewLink)&pageSize=10',access);
   if(f.files?.[0])return f.files[0];
   const tz=env.DEFAULT_TIMEZONE||'America/Toronto';

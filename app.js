@@ -1141,8 +1141,7 @@ async function init() {
       return;
     }
     if (confirm("¿Borrar todos los movimientos de prueba de este dispositivo?")) {
-      await ensureSummarySheet(state.sheetId,googleFetch).catch(error=>console.warn('Sheet summary setup failed',error));
-  localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_KEY);
       state.rows = [];
       renderDashboard();
       setStatus("Prueba local borrada.");

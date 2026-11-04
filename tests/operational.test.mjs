@@ -9,7 +9,7 @@ if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const originalFetch=globalThis.fetch;
 const quiet=console.error;console.error=()=>{};
 const key=btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
-const env={PUBLIC_BASE_URL:'https://api.test',FRONTEND_URL:'https://antonydis.github.io/mis-gastos/',DEFAULT_TIMEZONE:'America/Toronto',TOKEN_ENCRYPTION_KEY:key};
+const env={PUBLIC_BASE_URL:'https://api.test',FRONTEND_URL:'https://antonydis.github.io/mis-gastos/',DEFAULT_TIMEZONE:'America/Toronto',TOKEN_ENCRYPTION_KEY:key,PUBLIC_RATE_LIMIT:{limit:async()=>({success:true})}};
 const date=new Date('2026-11-01T02:00:00Z'); // still October in Toronto
 const rows=[{date:'2026-10-12',amount:10,currency:'CAD',category:'Casa'},{date:'2026-10-13',amount:20,currency:'CAD',category:'Comida'},{date:'2026-10-14',amount:7,currency:'USD',category:'Viajes'},{date:'2026-09-01',amount:999,currency:'CAD',category:'Casa'}];
 const summary=monthlySummary(rows,'America/Toronto','categories',date);
@@ -21,7 +21,12 @@ const preflight=await worker.fetch(new Request('https://api.test/ai/text',{metho
 assert.equal(preflight.headers.get('Access-Control-Allow-Origin'),'https://antonydis.github.io');
 // Asynchronous errors must be converted to an HTTP response.
 const response=await worker.fetch(new Request('https://api.test/ai/text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'café 5'})}),env,{});
-assert.equal(response.status,500);assert.match((await response.json()).error,/OPENAI_API_KEY/);
+assert.equal(response.status,500);assert.equal((await response.json()).error,'Internal error');
+const textRequest=body=>new Request('https://api.test/ai/text',{method:'POST',body});
+const limited=await worker.fetch(textRequest('{}'),{...env,PUBLIC_RATE_LIMIT:{limit:async()=>({success:false})}});
+assert.equal(limited.status,429);
+assert.equal((await worker.fetch(textRequest('x'.repeat(16385)),env)).status,413);
+assert.equal((await worker.fetch(textRequest('{"text":123}'),env)).status,400);
 // Google serial dates remain usable for monthly calculations.
 globalThis.fetch=async()=>Response.json({values:[['id',46314,'Café','','Restaurantes',5,'CAD']]});
 const read=await readExpenses('sheet','access');assert.equal(read[0].date,'2026-10-19');
@@ -95,10 +100,10 @@ await handleUpdate({message:{from:{id:1},chat:{id:1,type:'private'},voice:{file_
 assert.ok(audioSeen);assert.match(messages.at(-1).text,/Guardado/);
 // OAuth failures produce specific, safe diagnostics instead of one generic screen.
 const oauthEnv={...env,GOOGLE_CLIENT_SECRET:'test-secret',PUBLIC_BASE_URL:'https://api.test',DB:{
-  prepare(sql){return{bind(){return{first:async()=>sql.includes('oauth_states')?{link_code:'test-link',expires_at:Date.now()+60000}:{code:'test-link',expires_at:Date.now()+60000,used:0},run:async()=>({})};}};},
+  prepare(sql){return{bind(){return{first:async()=>sql.includes('oauth_states')?{link_code:'test-link',expires_at:Date.now()+60000}:{code:'test-link',expires_at:Date.now()+60000,used:0},run:async()=>({meta:{changes:1}})};}};},
   batch:async()=>[]
 }};
-const callback=()=>new Request('https://api.test/oauth/callback?state=test-state&code=test-code');
+const callback=()=>new Request('https://api.test/oauth/callback?state=test-state&code=test-code',{headers:{Cookie:'__Host-mg-oauth=test-state'}});
 let result=await worker.fetch(callback(),{...oauthEnv,GOOGLE_CLIENT_SECRET:''},{});
 assert.equal(new URL(result.headers.get('Location')).searchParams.get('reason'),'missing-google-secret');
 result=await worker.fetch(callback(),{...oauthEnv,TOKEN_ENCRYPTION_KEY:'invalid'},{});
@@ -116,5 +121,29 @@ for(const service of ['drive','sheets']){
  result=await worker.fetch(callback(),oauthEnv,{});
  assert.equal(new URL(result.headers.get('Location')).searchParams.get('reason'),service+'-api-disabled');
 }
+const noCookie=await worker.fetch(new Request('https://api.test/oauth/callback?state=test-state&code=test-code'),oauthEnv);
+assert.equal(new URL(noCookie.headers.get('Location')).searchParams.get('reason'),'expired-state');
+let claims=0;
+let webhookDeliveries=0;
+const webhookEnv={...env,TELEGRAM_WEBHOOK_SECRET:'test',DB:{prepare(sql){
+ return {bind(){return {
+  run:async()=>{assert.match(sql,/INSERT OR IGNORE INTO processed_updates/);return {meta:{changes:claims++===0?1:0}};},
+  first:async()=>null
+ };}};
+}}};
+globalThis.fetch=async url=>{
+ assert.match(url,/api.telegram.org/);
+ webhookDeliveries++;
+ return Response.json({ok:true,result:{}});
+};
+const webhookRequest=()=>new Request('https://api.test/telegram/webhook',{
+ method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':'test'},
+ body:JSON.stringify({update_id:42,...update('/idioma')})
+});
+const deliveries=await Promise.all([worker.fetch(webhookRequest(),webhookEnv),worker.fetch(webhookRequest(),webhookEnv)]);
+assert.ok(deliveries.every(response=>response.ok));
+assert.equal(webhookDeliveries,1);
+await handleUpdate({callback_query:{from:{id:1},message:{chat:{id:2,type:'private'}},data:'language:es'}},webhookEnv);
+assert.equal(webhookDeliveries,1,'A callback from a different private chat is ignored');
 console.error=quiet;globalThis.fetch=originalFetch;
 console.log('OK: CORS, async failures, timezone, currencies, Google dates, safe writes, Telegram menu/link/media failures.');

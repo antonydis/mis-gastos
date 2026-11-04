@@ -90,6 +90,7 @@ async function structuredExpenseFromContent(content, profile, env, source) {
     },
     body: JSON.stringify({
       model: env.OPENAI_VISION_MODEL || RECEIPT_MODEL,
+      store: false,
       reasoning: { effort: "none" },
       input: [{
         role: "user",
@@ -112,7 +113,7 @@ async function structuredExpenseFromContent(content, profile, env, source) {
 
   const data = await response.json();
   if (!response.ok) {
-    console.error("OpenAI Responses error", data);
+    console.error("OpenAI Responses error", response.status);
     throw new Error(data.error?.message || "No pude analizar el gasto.");
   }
 
@@ -195,7 +196,7 @@ export async function transcribeAudio(file, env) {
   });
   const data = await response.json();
   if (!response.ok) {
-    console.error("OpenAI transcription error", data);
+    console.error("OpenAI transcription error", response.status);
     throw new Error(data.error?.message || "No pude transcribir el audio.");
   }
   const text = String(data.text || "").trim();

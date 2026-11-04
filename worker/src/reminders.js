@@ -109,7 +109,7 @@ export async function runReminders(env,send,now=new Date()){
     const inactive=now.getTime()-Number(r.last_activity_at||r.linked_at||now.getTime())>=86400000;
     const message=!snoozed&&inactive?'¿Te quedó algún gasto de ayer? Todavía puedes anotarlo.':'¿Te quedó algún gasto por anotar hoy? Puedes escribirlo o enviar un audio o una foto.';
     await send(r.chat_id,message,{...env,BOT_LANGUAGE:r.language==='en'?'en':'es'},{inline_keyboard:[[{text:'Registrar gasto',callback_data:'reminder:add:'+day}],[{text:'Hoy no gasté',callback_data:'reminder:reviewed:'+day},{text:'Recordarme más tarde',callback_data:'reminder:snooze:'+day}]]});
-   }catch(error){console.error('Reminder delivery failed',r.telegram_user_id,error);}
+   }catch(error){console.error('Reminder delivery failed');}
   }
   if(users.length<50)break;
  }
