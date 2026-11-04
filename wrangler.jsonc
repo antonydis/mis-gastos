@@ -5,7 +5,8 @@
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "logs": { "invocation_logs": false }
   },
   "vars": {
     "FRONTEND_URL": "https://mis-gastos-web-28z.pages.dev/",
@@ -23,6 +24,9 @@
       "database_name": "mis-gastos",
       "database_id": "dec384c0-85c5-4e78-a81b-4c51a244070d"
     }
+  ],
+  "ratelimits": [
+    { "name": "PUBLIC_RATE_LIMIT", "namespace_id": "761204", "simple": { "limit": 12, "period": 60 } }
   ],
   "triggers": {
     "crons": [

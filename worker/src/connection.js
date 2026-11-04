@@ -1,6 +1,7 @@
 import {encrypt} from './utils.js';
 
 const errors = {
+      "sheet-already-linked":"Esta hoja ya está vinculada a otra cuenta de Telegram. Usa otra cuenta de Google.",
       "expired-link":"El enlace venció o ya se usó. Vuelve a Telegram y envía /link.",
       "expired-state":"La autorización venció. Vuelve a Telegram y envía /link.",
       "no-refresh-token":"Google no entregó el permiso necesario para guardar gastos cuando cierres esta página. Vuelve a Telegram y envía /link para autorizar de nuevo.",
@@ -24,6 +25,7 @@ export async function connectionIssue(env){
 }
 
 const englishErrors={
+  'sheet-already-linked':'This sheet is already linked to another Telegram account. Use another Google account.',
   'expired-link':'The link expired or has already been used. Send /link in Telegram.',
   'expired-state':'Authorization expired. Send /link in Telegram.',
   'no-refresh-token':'Google did not provide background access. Send /link and authorize again.',
