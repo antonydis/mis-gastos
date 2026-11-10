@@ -160,6 +160,9 @@ try {
   await handleUpdate(documentMessage(),env);
   assert.equal(pending.get('1')?.kind,'import');
   assert.equal(appended.length,1);
+  // Clear the pending image review before checking independent invalid-document cases.
+  const imageNonce=JSON.parse(pending.get('1').payload).nonce;
+  await handleUpdate(callback('import:cancel:'+imageNonce),env);
   // UC14: Oversized document blocked before download/analyze/save.
   const huge=documentMessage();huge.message.document.file_size=8*1024*1024+1;
   const prior=messages.length;
