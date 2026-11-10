@@ -55,7 +55,7 @@ try {
   result=await analyzeDocument(pdf,profile,{OPENAI_API_KEY:'test'});
   assert.equal(result.expenses.length,1);
   assert.equal(result.expenses[0].amount,5);
-  // UC06: Missing foreign-currency conversion is never invented.
+  // UC06a: Unreadable bank-statement dates must not default to today.\n  next=extracted([expense({date:''})]);\n  result=await analyzeDocument(pdf,profile,{OPENAI_API_KEY:'test'});\n  assert.equal(result.expenses.length,0);\n  assert.match(result.question,/No pude leer todas las fechas/);\n  next=extracted([expense({date:'2026-02-30'})]);\n  result=await analyzeDocument(pdf,profile,{OPENAI_API_KEY:'test'});\n  assert.equal(result.expenses.length,0);\n  // UC06: Missing foreign-currency conversion is never invented.
   next=extracted([expense({amount:20,currency:'USD',amountCAD:null})]);
   result=await analyzeDocument(pdf,profile,{OPENAI_API_KEY:'test'});
   assert.equal(result.expenses[0].amountCAD,null);
