@@ -110,7 +110,7 @@ env.DB={
         return {meta:{changes:1}};
       }
     }}
-  }
+  }}
 };
 globalThis.fetch=async(url,options={})=>{
   const u=String(url);
