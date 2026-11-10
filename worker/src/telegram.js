@@ -163,12 +163,22 @@ async function editFromText(uid,chat,text,link,pending,env){
   return send(chat,shortReceipt([updated]).replace('✓ Guardado','✓ Corregido'),env,recordButtons([updated.id],[updated],link.sheet_id,false));
 }
 
-async function saveClearExpenses(uid,chat,link,result,env,confirmed=false){
+export function duplicateImportFlags(expenses,existing=[]){
+  const keys=new Set((existing||[]).map(x=>[x.date,x.currency,Number(x.amount).toFixed(2)].join('|')));
+  return (expenses||[]).map(x=>{
+    const key=[x.date,x.currency,Number(x.amount).toFixed(2)].join('|');
+    const possibleDuplicate=keys.has(key);
+    keys.add(key);
+    return {...x,possibleDuplicate};
+  });
+}
+
+async function saveClearExpenses(uid,chat,link,result,env,confirmed=false,forceReview=false){
   if(!result.expenses?.length&&result.excludedCount)return send(chat,'No encontré gastos de consumo para importar. Transacciones excluidas: '+result.excludedCount+'. '+(result.reviewNotes||''),env);
-  if(!confirmed&&result.expenses?.length&&(result.expenses.length>1||result.documentType==='statement'||result.expenses.some(x=>x.source==='Documento'))){
+  if(!confirmed&&result.expenses?.length&&(forceReview||result.expenses.length>1||result.documentType==='statement'||result.expenses.some(x=>x.source==='Documento'))){
     const access=await refreshAccess(link.google_refresh_token,env);
     const existing=await readExpenses(link.sheet_id,access);
-    result.expenses=result.expenses.map(x=>({...x,possibleDuplicate:existing.some(old=>old.date===x.date&&old.currency===x.currency&&old.amount===x.amount)}));
+    result.expenses=duplicateImportFlags(result.expenses,existing);
     const nonce=randomCode();
     await env.DB.prepare('INSERT INTO pending VALUES(?,?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,expires_at=excluded.expires_at').bind(uid,'import',JSON.stringify({nonce,result}),Date.now()+PENDING_TTL).run();
     const preview=shortReceipt(result.expenses).replace('✓ Guardado','Revisa antes de guardar:');
@@ -489,8 +499,11 @@ export async function handleUpdate(update,env){
 
   try{
     if(m.document){
-      const type=m.document.mime_type||'';
-      if(type!=='application/pdf'&&!type.startsWith('image/'))return send(chat,'Por ahora puedo leer fotos y PDFs. Envíame uno de esos archivos.',env);
+      const declaredType=(m.document.mime_type||'').split(';')[0].toLowerCase();
+      const extension=(m.document.file_name||'').split('.').pop().toLowerCase();
+      const supportedExtensions={pdf:'application/pdf',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif'};
+      const type=declaredType==='application/octet-stream'||!declaredType?(supportedExtensions[extension]||''):declaredType;
+      if(type!=='application/pdf'&&!['image/jpeg','image/png','image/webp','image/gif'].includes(type))return send(chat,'Por ahora puedo leer fotos y PDFs. Envíame uno de esos archivos.',env);
       if(m.document.file_size>8*1024*1024)return send(chat,'El archivo es muy grande. Envía una página o una foto de cada parte.',env);
       const raw=await mediaStep('file-download',()=>telegramFile(m.document.file_id,env,m.document.file_name||'gastos.pdf',type));
       const file=new File([raw],raw.name,{type});
@@ -499,7 +512,7 @@ export async function handleUpdate(update,env){
         await rememberClarification(uid,{source:'Documento',originalText:result.question,partial:result.expenses||[],question:result.question},env);
         return send(chat,result.question+' Si falta información visual, vuelve a enviar el documento con una aclaración en el pie de foto.',env);
       }
-      return await saveClearExpenses(uid,chat,link,result,env);
+      return await saveClearExpenses(uid,chat,link,result,env,false,true);
     }
     if(m.photo)return await processPhoto(uid,chat,m,link,env);
     if(m.voice||m.audio)return await processAudio(uid,chat,m,link,env);

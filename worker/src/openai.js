@@ -121,9 +121,13 @@ async function structuredExpenseFromContent(content, profile, env, source) {
   if (!raw) throw new Error("El modelo no devolvió una respuesta.");
   const parsed = JSON.parse(raw);
 
+  parsed.documentType=['expense','receipts','statement'].includes(parsed.documentType)?parsed.documentType:'expense';
+  const validDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(value||'')&&!Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
+  // A bank statement must never silently convert an unreadable historical date to today.
+  const missingStatementDate=parsed.documentType==='statement'&&(parsed.expenses||[]).some(x=>!validDate(x.date));
   parsed.expenses = (parsed.expenses || [])
     .map((x) => ({
-      date: /^\d{4}-\d{2}-\d{2}$/.test(x.date || "") ? x.date : today,
+      date: validDate(x.date) ? x.date : today,
       description: String(x.description || "Gasto").trim().slice(0,120),
       merchant: String(x.merchant || "").trim().slice(0,100),
       category: CATEGORIES.includes(x.category) ? x.category : "Otros",
@@ -136,9 +140,12 @@ async function structuredExpenseFromContent(content, profile, env, source) {
     }))
     .filter((x) => Number.isFinite(x.amount) && x.amount > 0);
 
-  parsed.documentType=['expense','receipts','statement'].includes(parsed.documentType)?parsed.documentType:'expense';
   parsed.excludedCount=Math.max(0,Number(parsed.excludedCount)||0);
   parsed.reviewNotes=String(parsed.reviewNotes||'').trim().slice(0,500);
+  if(missingStatementDate){
+    parsed.expenses=[];
+    parsed.question=profile.language==='en'?'I could not read every transaction date. Send a clearer or smaller section.':'No pude leer todas las fechas del extracto. Envía una imagen más clara o una sección más pequeña.';
+  }
   if(parsed.expenses.length>25||Number(parsed.totalExpenseCount)>25){
     parsed.expenses=[];
     parsed.question=profile.language==='en'?'Please split the document into sections of up to 25 expenses so we can review all of them.':'Divide el documento en secciones de hasta 25 gastos para poder revisarlos todos.';
