@@ -122,7 +122,7 @@ async function structuredExpenseFromContent(content, profile, env, source) {
   const parsed = JSON.parse(raw);
 
   parsed.documentType=['expense','receipts','statement'].includes(parsed.documentType)?parsed.documentType:'expense';
-  const validDate=value=>/^\\d{4}-\\d{2}-\\d{2}$/.test(value||'')&&!Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
+  const validDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(value||'')&&!Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
   // A bank statement must never silently convert an unreadable historical date to today.
   const missingStatementDate=parsed.documentType==='statement'&&(parsed.expenses||[]).some(x=>!validDate(x.date));
   parsed.expenses = (parsed.expenses || [])
